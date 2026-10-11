@@ -26,7 +26,13 @@
                         aria-hidden="true">ct</span><span>Chatify</span></a>
                 <nav class="nav-links" aria-label="Main navigation"><a
                         href="#home">Home</a><a href="#about">About</a></nav>
-                <div class="nav-actions"><a class="nav-signin"
+                <div class="nav-actions"><button class="theme-toggle"
+                        type="button" role="switch" aria-checked="false"
+                        aria-label="Switch to dark theme" title="Switch to dark theme">
+                        <svg class="toggle-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
+                        <svg class="toggle-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 15.3A8.5 8.5 0 0 1 8.7 3.5 8.6 8.6 0 1 0 20.5 15.3Z"/></svg>
+                        <span class="toggle-thumb" aria-hidden="true"></span>
+                    </button><a class="nav-signin"
                         href="/login">Sign in</a><a
                         class="button button-primary" href="/register">Create
                         account</a></div>
@@ -73,5 +79,6 @@
             <footer><span>Made for meaningful conversations</span><span
                     aria-hidden="true">·</span><span>Chatify</span></footer>
         </div>
+        <script src="/CHATIFY/frontend/js/script.js" defer></script>
     </body>
 </html>
