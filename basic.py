@@ -7,5 +7,3 @@ def get_info():
         usernames["username"] = name
     print(usernames)
 get_info()
-
-    
