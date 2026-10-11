@@ -8,6 +8,23 @@
   --paper: #fff;
   --wash: #f6faf9;
 }
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 1.5s;
+  animation-timing-function: ease-in-out;
+}
+::view-transition-old(root) {
+  animation-name: theme-fade-out;
+}
+::view-transition-new(root) {
+  animation-name: theme-fade-in;
+}
+@keyframes theme-fade-out {
+  to { opacity: 0; }
+}
+@keyframes theme-fade-in {
+  from { opacity: 0; }
+}
 * {
   box-sizing: border-box;
 }
@@ -551,17 +568,6 @@ body.dark-theme .toggle-sun {
 body.dark-theme .toggle-moon {
   opacity: 1;
 }
-@media (prefers-reduced-motion: reduce) {
-  body,
-  .browser,
-  .browser-bar,
-  .brand-logo,
-  .theme-toggle,
-  .toggle-thumb,
-  main::before {
-    transition-duration: 0.01ms !important;
-  }
-}
 @media (max-width: 680px) {
   body {
     padding: 0;
@@ -570,7 +576,7 @@ body.dark-theme .toggle-moon {
   .browser {
     height: 100vh;
     height: 100dvh;
-    min-height: 100vh;
+    min-height: 100dvh;
     border: 0;
     border-radius: 0;
     box-shadow: none;
@@ -584,7 +590,7 @@ body.dark-theme .toggle-moon {
   }
   .site-header {
     min-height: 68px;
-    padding: 0 20px;
+    padding: 0 16px;
   }
   .brand {
     font-size: 19px;
@@ -687,6 +693,17 @@ body.dark-theme .toggle-moon {
   }
 }
 @media (max-width: 390px) {
+  .site-header {
+    padding: 0 12px;
+  }
+  .brand {
+    gap: 6px;
+    font-size: 17px;
+  }
+  .brand-logo {
+    width: 33px;
+    height: 27px;
+  }
   .nav-signin {
     display: none;
   }
@@ -694,7 +711,7 @@ body.dark-theme .toggle-moon {
     gap: 9px;
   }
   .nav-actions {
-    gap: 7px;
+    gap: 6px;
   }
   .theme-toggle {
     flex-basis: 56px;
@@ -714,18 +731,32 @@ body.dark-theme .toggle-moon {
     flex: 1;
     padding: 0 12px;
   }
+  .nav-actions .button {
+    min-height: 34px;
+    padding: 0 8px;
+    font-size: 11px;
+  }
   .conversation {
-    transform: scale(0.94);
-    transform-origin: top center;
-    width: 108%;
-    margin-left: -4%;
+    width: 100%;
+    margin-left: auto;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    transition: none !important;
+@media (max-width: 340px) {
+  .site-header {
+    padding: 0 8px;
+  }
+  .brand-logo {
+    width: 29px;
+  }
+  .nav-actions .button {
+    padding: 0 6px;
+    font-size: 10px;
+  }
+  h1 {
+    font-size: 40px;
+  }
+  .bubble {
+    padding: 10px 11px;
+    font-size: 13px;
   }
 }
