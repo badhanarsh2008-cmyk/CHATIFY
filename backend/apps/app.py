@@ -27,10 +27,21 @@ async def landing_page(request : Request):
     )
 
 @app.get("/register", response_class=HTMLResponse)
+@app.get("/signup", response_class=HTMLResponse, include_in_schema=False)
 async def signup(request : Request):
     return templates.TemplateResponse(
         request=request,
         name="signup.html",
+        context={},
+    )
+
+
+@app.get("/login", response_class=HTMLResponse)
+@app.get("/signin", response_class=HTMLResponse, include_in_schema=False)
+async def signin(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="signin.html",
         context={},
     )
 

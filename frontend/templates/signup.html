@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6faf9">
+    <meta name="description" content="Create your Chatify account and start connecting.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/CHATIFY/frontend/styles/auth.css?v=1">
+    <title>Create account · Chatify</title>
+  </head>
+  <body>
+    <main class="auth-page">
+      <a class="brand" href="/" aria-label="Chatify home">
+        <img src="/CHATIFY/frontend/logo/chatify_logo.png" alt="" class="brand-logo">
+        <span>Chatify</span>
+      </a>
+
+      <section class="auth-card" aria-labelledby="page-title">
+        <div class="card-heading">
+          <span class="card-kicker">Your people are here</span>
+          <h1 id="page-title">Create your account</h1>
+          <p>Make an account to find friends, chat, and explore ideas with Aryaki.</p>
+        </div>
+
+        {% if error %}
+          <p class="form-message form-message-error" role="alert">{{ error }}</p>
+        {% endif %}
+
+        <form action="/register" method="post" class="auth-form">
+          <div class="form-field">
+            <label for="username">Username</label>
+            <input id="username" name="username" type="text" required minlength="3" maxlength="30"
+              pattern="[A-Za-z0-9_]{3,30}" autocomplete="username" autocapitalize="none"
+              spellcheck="false" placeholder="Choose a username" aria-describedby="username-help">
+            <small id="username-help">Use 3–30 letters, numbers, or underscores.</small>
+          </div>
+
+          <div class="form-field">
+            <label for="email">Email address</label>
+            <input id="email" name="email" type="email" required maxlength="254"
+              autocomplete="email" autocapitalize="none" placeholder="you@example.com">
+          </div>
+
+          <div class="form-field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" required minlength="12" maxlength="128"
+              autocomplete="new-password" placeholder="At least 12 characters">
+            <small>Use a unique password you don’t use on other sites.</small>
+          </div>
+
+          <div class="form-field">
+            <label for="password-confirmation">Confirm password</label>
+            <input id="password-confirmation" name="password_confirmation" type="password" required
+              minlength="12" maxlength="128" autocomplete="new-password" placeholder="Enter it again">
+          </div>
+
+          <button class="submit-button" type="submit">Create account <span aria-hidden="true">→</span></button>
+        </form>
+
+        <p class="auth-switch">Already have an account? <a href="/login">Sign in</a></p>
+      </section>
+
+      <a class="back-link" href="/">← Back to Chatify</a>
+    </main>
+  </body>
+</html>

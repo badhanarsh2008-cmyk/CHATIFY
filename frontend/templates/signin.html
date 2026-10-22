@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6faf9">
+    <meta name="description" content="Sign in to Chatify and continue your conversations.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/CHATIFY/frontend/styles/auth.css?v=1">
+    <title>Sign in · Chatify</title>
+  </head>
+  <body>
+    <main class="auth-page">
+      <a class="brand" href="/" aria-label="Chatify home">
+        <img src="/CHATIFY/frontend/logo/chatify_logo.png" alt="" class="brand-logo">
+        <span>Chatify</span>
+      </a>
+
+      <section class="auth-card signin-card" aria-labelledby="page-title">
+        <div class="card-heading">
+          <span class="card-kicker">Good to have you back</span>
+          <h1 id="page-title">Welcome back</h1>
+          <p>Sign in to pick up where your conversations left off.</p>
+        </div>
+
+        {% if error %}
+          <p class="form-message form-message-error" role="alert">{{ error }}</p>
+        {% endif %}
+
+        {% if notice %}
+          <p class="form-message form-message-notice" role="status">{{ notice }}</p>
+        {% endif %}
+
+        <form action="/login" method="post" class="auth-form">
+          <div class="form-field">
+            <label for="identifier">Username or email</label>
+            <input id="identifier" name="identifier" type="text" required maxlength="254"
+              autocomplete="username" autocapitalize="none" spellcheck="false"
+              placeholder="Your username or email">
+          </div>
+
+          <div class="form-field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" required maxlength="128"
+              autocomplete="current-password" placeholder="Your password">
+          </div>
+
+          <button class="submit-button" type="submit">Sign in <span aria-hidden="true">→</span></button>
+        </form>
+
+        <p class="auth-switch">New to Chatify? <a href="/register">Create an account</a></p>
+      </section>
+
+      <a class="back-link" href="/">← Back to Chatify</a>
+    </main>
+  </body>
+</html>
