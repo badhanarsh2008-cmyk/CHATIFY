@@ -42,3 +42,48 @@ if (themeToggle) {
     }
   });
 }
+
+const pageRoot = document.documentElement;
+
+window.addEventListener("pageshow", (event) => {
+  pageRoot.classList.remove("page-leaving");
+
+  if (event.persisted) {
+    pageRoot.classList.remove("page-ready");
+    requestAnimationFrame(() => pageRoot.classList.add("page-ready"));
+  } else {
+    pageRoot.classList.add("page-ready");
+  }
+});
+
+document.addEventListener("click", (event) => {
+  if (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  ) {
+    return;
+  }
+
+  const link = event.target.closest("a[href]");
+  if (!link || link.hasAttribute("download") || (link.target && link.target !== "_self")) {
+    return;
+  }
+
+  const destination = new URL(link.href, window.location.href);
+  if (
+    destination.origin !== window.location.origin ||
+    !["http:", "https:"].includes(destination.protocol) ||
+    (destination.pathname === window.location.pathname && destination.search === window.location.search)
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+  pageRoot.classList.remove("page-ready");
+  pageRoot.classList.add("page-leaving");
+  window.setTimeout(() => window.location.assign(destination.href), 850);
+});
