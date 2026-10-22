@@ -207,12 +207,47 @@ h1 {
 .form-message-error { border-color: #f0c5c1; background: #fff5f4; color: #9c312a; }
 .form-message-notice { border-color: #b9dfd3; background: #f0faf6; color: #246c59; }
 
+body.dark-theme {
+  color-scheme: dark;
+  --ink: #e8f0f1;
+  --muted: #a9bbc1;
+  --teal: #4ca99f;
+  --teal-hover: #398f86;
+  background: radial-gradient(ellipse at 4% 100%, #183b3a 0, transparent 38%),
+    radial-gradient(ellipse at 100% 0, #1b3438 0, transparent 36%), #101d22;
+}
+body.dark-theme .brand { color: #b5e0da; }
+body.dark-theme .auth-card { border-color: #2b4246; background: #182a30; box-shadow: 0 22px 70px #0005; }
+body.dark-theme .card-kicker { color: #8bd0c6; }
+body.dark-theme .form-field label { color: #d4e0e2; }
+body.dark-theme .form-field input { border-color: #3a5357; background: #122329; color: #e8f0f1; }
+body.dark-theme .form-field input:focus { border-color: #66b9ae; background: #14272d; }
+body.dark-theme .form-field small, body.dark-theme .back-link { color: #a1b1b8; }
+body.dark-theme .form-message-error { border-color: #734542; background: #382725; color: #ffc4bd; }
+body.dark-theme .form-message-notice { border-color: #356052; background: #1d3932; color: #a6e2cc; }
+
 @media (max-width: 420px) {
   .auth-page { justify-content: flex-start; gap: 16px; padding: 24px 14px; }
   .brand { margin-top: 8px; font-size: 21px; }
   .brand-logo { width: 34px; height: 28px; }
   .auth-card { padding: 25px 20px; border-radius: 18px; }
   .card-heading { margin-bottom: 21px; }
+}
+
+@media (max-height: 760px) {
+  .auth-page { justify-content: flex-start; gap: 8px; padding-top: 8px; padding-bottom: 8px; }
+  .brand { font-size: 20px; }
+  .brand-logo { width: 32px; height: 26px; }
+  .auth-card { padding: 18px 24px; border-radius: 16px; }
+  .card-heading { margin-bottom: 12px; }
+  .card-heading p { margin-top: 6px; font-size: 14px; }
+  .auth-form { gap: 8px; }
+  .form-field { gap: 4px; }
+  .form-field input { min-height: 40px; }
+  .form-field small { font-size: 11px; }
+  .submit-button { min-height: 42px; }
+  .auth-switch { margin-top: 10px; }
+  .back-link { font-size: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

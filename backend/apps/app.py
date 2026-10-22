@@ -26,6 +26,22 @@ async def landing_page(request : Request):
         context={},
     )
 
+@app.get("/about", response_class=HTMLResponse)
+async def about_page(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="about.html",
+        context={},
+    )
+
+@app.get("/terms", response_class=HTMLResponse)
+async def terms_page(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="terms.html",
+        context={},
+    )
+
 @app.get("/register", response_class=HTMLResponse)
 @app.get("/signup", response_class=HTMLResponse, include_in_schema=False)
 async def signup(request : Request):

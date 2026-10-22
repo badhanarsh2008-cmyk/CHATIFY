@@ -1,14 +1,16 @@
 const themeToggle = document.querySelector(".theme-toggle");
 
+let savedDarkTheme = false;
+try {
+  savedDarkTheme = localStorage.getItem("chatify-theme") === "dark";
+} catch {
+  // Use the light theme when browser storage is unavailable.
+}
+document.body.classList.toggle("dark-theme", savedDarkTheme);
+
 if (themeToggle) {
   const themeColor = document.querySelector('meta[name="theme-color"]');
-  let isDark = false;
-
-  try {
-    isDark = localStorage.getItem("chatify-theme") === "dark";
-  } catch {
-    // The theme switch still works when browser storage is unavailable.
-  }
+  let isDark = savedDarkTheme;
 
   const applyTheme = (dark, save = false) => {
     document.body.classList.toggle("dark-theme", dark);

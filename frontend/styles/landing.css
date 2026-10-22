@@ -314,6 +314,7 @@ footer {
   font-size: 11px;
   transition: color 1.5s ease;
 }
+footer a { color: #286c68; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 
 /* Dark palette */
 body.dark-theme {
@@ -340,6 +341,7 @@ body.dark-theme .second .bubble { background: linear-gradient(135deg, #187b73, #
 body.dark-theme .avatar { border-color: #1a3035; }
 body.dark-theme .meta, body.dark-theme footer, body.dark-theme .hint { color: #a1b1b8; }
 body.dark-theme .hint strong { color: #8bd0c6; }
+body.dark-theme footer a { color: #8bd0c6; }
 body.dark-theme .theme-toggle { border-color: #36585b; background: #234247; color: #b9e2dc; }
 body.dark-theme .toggle-thumb { transform: translateX(30px); background: #c9e9e3; }
 body.dark-theme .toggle-sun { opacity: 0.5; }
