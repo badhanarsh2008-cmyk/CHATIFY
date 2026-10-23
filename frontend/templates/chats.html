@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7faf9">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('frontend', path='/styles/chats.css') }}?v=5">
+  <title>{% if active_partner %}{{ active_partner.display_name }} · {% endif %}Chatify</title>
+</head>
+<body class="chat-body">
+  <main class="chat-page">
+    <header class="chat-topbar">
+      <a class="back-to-friends" href="/friends" aria-label="Back to friends">‹ <span>Friends</span><i class="chat-nav-dot {% if not has_unread_messages %}hidden{% endif %}" data-chat-dot></i></a>
+      {% if active_partner %}
+      <div class="chat-person">
+        {% if active_partner.has_avatar %}<img class="chat-avatar" src="/users/{{ active_partner.friend_id }}/avatar" alt="">
+        {% else %}<span class="chat-avatar avatar-fallback">{{ active_partner.display_name[:1]|upper }}</span>{% endif %}
+        <div><strong>{{ active_partner.display_name }}</strong><small>@{{ active_partner.username }}</small><small id="socket-status" class="socket-status">Connecting…</small></div>
+      </div>
+      {% else %}<div class="chat-person"><div><strong>Chatify</strong><small>Your conversations</small></div></div>{% endif %}
+      <div class="chat-controls">
+        <button class="theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Switch to dark theme" title="Switch to dark theme">
+          <svg class="toggle-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
+          <svg class="toggle-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 15.3A8.5 8.5 0 0 1 8.7 3.5 8.6 8.6 0 1 0 20.5 15.3Z"/></svg>
+          <span class="toggle-thumb" aria-hidden="true"></span>
+        </button>
+        <form action="/logout" method="post"><button class="chat-logout" type="submit">Sign out</button></form>
+      </div>
+    </header>
+
+    {% if notice %}<p class="chat-notice">{{ notice }}</p>{% endif %}
+    <nav class="conversation-strip" aria-label="Friends you have chatted with">
+      {% for chat in chats %}
+      <a class="conversation-chip {% if chat.id == active_id %}active{% endif %}" data-conversation-id="{{ chat.id }}" href="/chats?conversation={{ chat.id }}">
+        {% if chat.has_avatar %}<img class="conversation-avatar" src="/users/{{ chat.friend_id }}/avatar" alt="">
+        {% else %}<span class="conversation-avatar avatar-fallback">{{ chat.display_name[:1]|upper }}</span>{% endif %}
+        <span class="conversation-copy"><strong>{{ chat.display_name }}</strong><small>{{ chat.last_message or ('@' ~ chat.username) }}</small></span>
+        <i class="chat-unread-dot {% if not chat.unread_count %}hidden{% endif %}" data-conversation-dot aria-label="Unread message"></i>
+      </a>
+      {% else %}<span class="no-conversations">Friends you message will show up here.</span>{% endfor %}
+    </nav>
+    {% if active_id and messages is not none and active_partner %}
+    <section class="chat-layout" data-conversation-id="{{ active_id }}" data-user-id="{{ user.id }}" aria-label="Chat with {{ active_partner.display_name }}">
+      <div class="message-list" id="message-list">
+        {% for message in messages %}
+        <article class="message"><strong>{{ message.display_name }}</strong><p>{{ message.body }}</p><time>{{ message.created_at.strftime('%b %d, %H:%M') }}</time></article>
+        {% else %}<div class="chat-empty"><h1>Say hello</h1><p>Your conversation starts here.</p></div>{% endfor %}
+      </div>
+      <form class="send-form" id="message-form" action="/chats/{{ active_id }}/send" method="post">
+        <input id="message-input" name="body" maxlength="5000" required placeholder="Write a message…" aria-label="Message">
+        <button type="submit" aria-label="Send message">➤</button>
+      </form>
+    </section>
+    {% elif active_id %}
+    <section class="chat-empty unavailable"><h1>Chat unavailable</h1><p>This conversation is unavailable or you are not a member.</p><a href="/friends">Back to Friends</a></section>
+    {% else %}
+    <section class="chat-empty welcome"><h1>Choose a friend to message</h1><p>Open a conversation from your Friends page.</p><a href="/friends">Go to Friends</a></section>
+    {% endif %}
+  </main>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" defer></script>
+  <script src="{{ url_for('frontend', path='/js/realtime.js') }}?v=4" defer></script>
+  <script src="{{ url_for('frontend', path='/js/script.js') }}?v=1" defer></script>
+</body>
+</html>

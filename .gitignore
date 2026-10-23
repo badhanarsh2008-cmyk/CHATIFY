@@ -1,0 +1,6 @@
+planning.md
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.env.example

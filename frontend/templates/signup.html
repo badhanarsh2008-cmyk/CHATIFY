@@ -31,6 +31,13 @@
 
         <form action="/register" method="post" class="auth-form">
           <div class="form-field">
+            <label for="display-name">Name</label>
+            <input id="display-name" name="display_name" type="text" required maxlength="80"
+              autocomplete="name" placeholder="Your name">
+            <small>This name will be shown to your friends.</small>
+          </div>
+
+          <div class="form-field">
             <label for="username">Username</label>
             <input id="username" name="username" type="text" required minlength="3" maxlength="30"
               pattern="[A-Za-z0-9_]{3,30}" autocomplete="username" autocapitalize="none"
