@@ -1,20 +1,47 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/CHATIFY/frontend/styles/friends.css"><link rel="stylesheet" href="/CHATIFY/frontend/styles/chats.css"><link rel="stylesheet" href="/CHATIFY/frontend/styles/profile.css"><title>Chats · Chatify</title></head>
-<body><div class="app-shell"><aside class="sidebar"><a class="brand" href="/"><span class="brand-mark">C†</span> Chatify</a>
-  <nav aria-label="Main navigation"><a class="nav-link" href="/friends"><span>♧</span> Friends <span class="nav-dot {% if not has_requests %}hidden{% endif %}" data-friend-dot aria-label="New friend request"></span></a><a class="nav-link active" href="/chats"><span>▢</span> Chats</a><a class="nav-link" href="#settings"><span>⚙</span> Settings</a></nav>
-  <div class="account-row"><form action="/profile/avatar" method="post" enctype="multipart/form-data" class="avatar-form"><label class="avatar-picker" title="Change profile photo">{% if user.has_avatar %}<img class="avatar avatar-small" src="/users/{{ user.id }}/avatar" alt="Profile photo">{% else %}<span class="avatar avatar-small">{{ user.display_name[:1]|upper }}</span>{% endif %}<span class="avatar-edit">Edit</span><input type="file" name="avatar" accept="image/png,image/jpeg,image/webp" required onchange="this.form.submit()" aria-label="Choose profile photo"></label></form><span class="account-label"><strong>{{ user.display_name }}</strong><small>@{{ user.username }}</small><details class="profile-name-edit"><summary>Edit name</summary><form action="/profile/name" method="post"><input name="display_name" value="{{ user.display_name }}" maxlength="80" required aria-label="Display name"><button type="submit">Save</button></form></details></span><form action="/logout" method="post"><button class="logout" aria-label="Sign out">⋮</button></form></div>
-  </aside><main class="content"><header class="page-header"><div><p class="eyebrow">YOUR CONVERSATIONS</p><h1>Chats</h1></div></header>
-  {% if notice %}<p class="notice">{{ notice }}</p>{% endif %}
-  <div class="chat-layout" {% if active_id and messages is not none %}data-conversation-id="{{ active_id }}"{% endif %}><section class="chat-list" aria-label="Conversations">
-    {% for chat in chats %}<a class="chat-entry {% if chat.id == active_id %}selected{% endif %}" href="/chats?conversation={{ chat.id }}">{% if chat.has_avatar %}<img class="avatar" src="/users/{{ chat.friend_id }}/avatar" alt="">{% else %}<span class="avatar">{{ chat.display_name[:1]|upper }}</span>{% endif %}<span class="friend-info"><strong>{{ chat.display_name }}</strong><small>{{ chat.last_message or 'Start the conversation' }}</small></span></a>
-    {% else %}<div class="empty-state"><h2>No conversations yet</h2><p>Add a friend first, then open Message from the Friends page.</p></div>{% endfor %}
-  </section><section class="chat-window" aria-label="Messages">
-    {% if active_id and messages is not none %}<div class="message-list" id="message-list">{% for message in messages %}<article class="message"><strong>{{ message.display_name }}</strong><p>{{ message.body }}</p><time>{{ message.created_at.strftime('%b %d, %H:%M') }}</time></article>{% else %}<div class="empty-state"><h2>Say hello</h2><p>Your conversation starts here.</p></div>{% endfor %}</div>
-      <form class="send-form" id="message-form" action="/chats/{{ active_id }}/send" method="post"><input id="message-input" name="body" maxlength="5000" required placeholder="Write a message…" aria-label="Message"><button class="primary-button">Send</button></form>
-    {% elif active_id %}<div class="empty-state"><h2>Chat unavailable</h2><p>This conversation is unavailable or you are not a member.</p></div>
-    {% else %}<div class="empty-state"><span class="empty-icon">▢</span><h2>Select a chat</h2><p>Choose a conversation on the left to view messages.</p></div>{% endif %}
-  </section></div></main></div>
-  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" defer></script><script src="/CHATIFY/frontend/js/realtime.js" defer></script>
-</body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7faf9">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('frontend', path='/styles/chats.css') }}?v=4">
+  <title>{% if active_partner %}{{ active_partner.display_name }} · {% endif %}Chatify</title>
+</head>
+<body class="chat-body">
+  <main class="chat-page">
+    <header class="chat-topbar">
+      <a class="back-to-friends" href="/friends" aria-label="Back to friends">‹ <span>Friends</span></a>
+      {% if active_partner %}
+      <div class="chat-person">
+        {% if active_partner.has_avatar %}<img class="chat-avatar" src="/users/{{ active_partner.friend_id }}/avatar" alt="">
+        {% else %}<span class="chat-avatar avatar-fallback">{{ active_partner.display_name[:1]|upper }}</span>{% endif %}
+        <div><strong>{{ active_partner.display_name }}</strong><small>@{{ active_partner.username }}</small><small id="socket-status" class="socket-status">Connecting…</small></div>
+      </div>
+      {% else %}<div class="chat-person"><div><strong>Chatify</strong><small>Your conversations</small></div></div>{% endif %}
+      <form action="/logout" method="post"><button class="chat-logout" type="submit">Sign out</button></form>
+    </header>
+
+    {% if notice %}<p class="chat-notice">{{ notice }}</p>{% endif %}
+    {% if active_id and messages is not none and active_partner %}
+    <section class="chat-layout" data-conversation-id="{{ active_id }}" aria-label="Chat with {{ active_partner.display_name }}">
+      <div class="message-list" id="message-list">
+        {% for message in messages %}
+        <article class="message"><strong>{{ message.display_name }}</strong><p>{{ message.body }}</p><time>{{ message.created_at.strftime('%b %d, %H:%M') }}</time></article>
+        {% else %}<div class="chat-empty"><h1>Say hello</h1><p>Your conversation starts here.</p></div>{% endfor %}
+      </div>
+      <form class="send-form" id="message-form" action="/chats/{{ active_id }}/send" method="post">
+        <input id="message-input" name="body" maxlength="5000" required placeholder="Write a message…" aria-label="Message">
+        <button type="submit" aria-label="Send message">➤</button>
+      </form>
+    </section>
+    {% elif active_id %}
+    <section class="chat-empty unavailable"><h1>Chat unavailable</h1><p>This conversation is unavailable or you are not a member.</p><a href="/friends">Back to Friends</a></section>
+    {% else %}
+    <section class="chat-empty welcome"><h1>Choose a friend to message</h1><p>Open a conversation from your Friends page.</p><a href="/friends">Go to Friends</a></section>
+    {% endif %}
+  </main>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" defer></script>
+  <script src="{{ url_for('frontend', path='/js/realtime.js') }}?v=3" defer></script>
+</body>
+</html>

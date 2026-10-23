@@ -233,9 +233,15 @@ def read_chat(user_id, conversation_id):
                     (conversation_id, user_id))
         if not cur.fetchone():
             return None
-        cur.execute("""SELECT m.id, m.body, m.created_at, u.username, u.display_name FROM messages m
-            JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=%s
-            ORDER BY m.created_at ASC LIMIT 100""", (conversation_id,))
+        # Select the newest page first, then display those messages oldest to newest.
+        cur.execute("""SELECT recent.id, recent.body, recent.created_at, recent.username, recent.display_name
+            FROM (
+                SELECT m.id, m.body, m.created_at, u.username, u.display_name
+                FROM messages m JOIN users u ON u.id=m.sender_id
+                WHERE m.conversation_id=%s
+                ORDER BY m.created_at DESC LIMIT 100
+            ) AS recent
+            ORDER BY recent.created_at ASC""", (conversation_id,))
         return cur.fetchall()
 
 

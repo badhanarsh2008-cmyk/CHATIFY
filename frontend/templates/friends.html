@@ -72,6 +72,6 @@
     </main>
   </div>
   <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" defer></script>
-  <script src="/CHATIFY/frontend/js/realtime.js" defer></script>
+  <script src="{{ url_for('frontend', path='/js/realtime.js') }}?v=3" defer></script>
 </body>
 </html>

@@ -24,17 +24,18 @@ PROJECT_DIR = Path(__file__).resolve().parents[2]
 FRONTEND_DIR = PROJECT_DIR / "frontend"
 TEMPLATES_DIR = FRONTEND_DIR / "templates"
 
-app = FastAPI(title="Chatify")
-app.mount("/CHATIFY/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
+fastapi_app = FastAPI(title="Chatify")
+fastapi_app.mount("/CHATIFY/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 SESSION_COOKIE = "chatify_session"
 
 # Socket.IO forwards ordinary HTTP routes to FastAPI and handles realtime events.
 sio = socketio.AsyncServer(async_mode="asgi")
-socket_app = socketio.ASGIApp(sio, app)
+# Socket connection state lives only in this Python process, keyed by Socket.IO sid.
+socket_sessions = {}
 
 
-@app.on_event("startup")
+@fastapi_app.on_event("startup")
 def prepare_database():
     # Tables are created once if missing; set DB_* values before starting the server.
     storage.init_db()
@@ -69,65 +70,65 @@ def page(request, name, **context):
     return templates.TemplateResponse(request=request, name=name, context=context)
 
 
-@app.get("/", response_class=HTMLResponse)
+@fastapi_app.get("/", response_class=HTMLResponse)
 async def landing_page(request: Request):
     return page(request, "landing_page.html")
 
 
-@app.get("/about", response_class=HTMLResponse)
+@fastapi_app.get("/about", response_class=HTMLResponse)
 async def about_page(request: Request):
     return page(request, "about.html")
 
 
-@app.get("/terms", response_class=HTMLResponse)
+@fastapi_app.get("/terms", response_class=HTMLResponse)
 async def terms_page(request: Request):
     return page(request, "terms.html")
 
 
-@app.get("/register", response_class=HTMLResponse)
-@app.get("/signup", response_class=HTMLResponse, include_in_schema=False)
+@fastapi_app.get("/register", response_class=HTMLResponse)
+@fastapi_app.get("/signup", response_class=HTMLResponse, include_in_schema=False)
 async def signup(request: Request):
     return page(request, "signup.html")
 
 
-@app.post("/register", response_class=HTMLResponse)
+@fastapi_app.post("/register", response_class=HTMLResponse)
 async def register(request: Request, username: str = Form(...), display_name: str = Form(...), email: str = Form(...),
                    password: str = Form(...), password_confirmation: str = Form(...)):
     username, display_name, email = username.strip(), display_name.strip(), email.strip()
     error = None
     if not (3 <= len(username) <= 30) or not all(c.isascii() and (c.isalnum() or c == "_") for c in username):
-        error = "Username 3–30 letters, numbers, ya underscores ka hona chahiye."
+        error = "Username 3–30 letters, numbers, only use underscore in username."
     elif "@" not in email or len(email) > 254:
-        error = "Valid email address enter karo."
+        error = "please enter valid email address"
     elif not 1 <= len(display_name) <= 80:
-        error = "Display name 1 se 80 characters ka hona chahiye."
-    elif not 12 <= len(password) <= 128:
-        error = "Password 12 se 128 characters ka hona chahiye."
+        error = "Display name should only contain 10-20 characters."
+    elif not 8 <= len(password) <= 128:
+        error = "Password should only contain 8-128 characters."
     elif password != password_confirmation:
-        error = "Dono passwords match nahi karte."
+        error = "Passwords doesn't match."
     if error:
         return page(request, "signup.html", error=error)
     try:
         storage.create_user(username, email, hash_password(password), display_name)
     except psycopg2.errors.UniqueViolation:
-        return page(request, "signup.html", error="Username ya email pehle se registered hai.")
+        return page(request, "signup.html", error="Username or email are already registered.")
     return RedirectResponse("/login?registered=1", status_code=303)
 
 
-@app.get("/login", response_class=HTMLResponse)
-@app.get("/signin", response_class=HTMLResponse, include_in_schema=False)
+@fastapi_app.get("/login", response_class=HTMLResponse)
+@fastapi_app.get("/signin", response_class=HTMLResponse, include_in_schema=False)
 async def signin(request: Request):
     if current_user(request):
         return RedirectResponse("/friends", status_code=303)
-    notice = "Account ban gaya. Ab sign in karo." if request.query_params.get("registered") else None
+    notice = "Signup completed, Now please signin." if request.query_params.get("registered") else None
     return page(request, "signin.html", notice=notice)
 
 
-@app.post("/login", response_class=HTMLResponse)
+@fastapi_app.post("/login", response_class=HTMLResponse)
 async def login(request: Request, identifier: str = Form(...), password: str = Form(...)):
     user = storage.find_user(identifier.strip())
     if not user or not password_matches(password, user["password_hash"]):
-        return page(request, "signin.html", error="Username/email ya password sahi nahi hai.")
+        return page(request, "signin.html", error="Username/email or password is wrong.")
     token = secrets.token_urlsafe(32)
     storage.create_session(user["id"], hashlib.sha256(token.encode()).hexdigest(),
                            datetime.now(timezone.utc) + timedelta(days=14))
@@ -138,8 +139,8 @@ async def login(request: Request, identifier: str = Form(...), password: str = F
     return response
 
 
-@app.get("/inbox")
-@app.get("/friends")
+@fastapi_app.get("/inbox")
+@fastapi_app.get("/friends")
 async def friends_page(request: Request, search: str = "", message: str = ""):
     user = current_user(request)
     if not user:
@@ -151,7 +152,7 @@ async def friends_page(request: Request, search: str = "", message: str = ""):
                 notice=message)
 
 
-@app.post("/friends/add")
+@fastapi_app.post("/friends/add")
 async def add_friend(request: Request, username: str = Form(...)):
     user = current_user(request)
     if not user:
@@ -168,11 +169,11 @@ async def add_friend(request: Request, username: str = Form(...)):
         }, room=f"user:{receiver_id}")
     elif added and request_kind == "accepted":
         await sio.emit("friend_request_accepted", {"name": user["display_name"]}, room=f"user:{receiver_id}")
-    message = "Request bhej di." if added else "User nahi mila, ya request pehle se hai."
+    message = "Request sent." if added else "User not found."
     return RedirectResponse(f"/friends?message={quote(message)}", status_code=303)
 
 
-@app.post("/friends/request/{request_id}")
+@fastapi_app.post("/friends/request/{request_id}")
 async def respond_to_request(request: Request, request_id: int, action: str = Form(...)):
     user = current_user(request)
     if not user:
@@ -183,7 +184,7 @@ async def respond_to_request(request: Request, request_id: int, action: str = Fo
     return RedirectResponse("/friends", status_code=303)
 
 
-@app.get("/users/{user_id}/avatar")
+@fastapi_app.get("/users/{user_id}/avatar")
 async def user_avatar(user_id: int):
     image_bytes = await asyncio.to_thread(storage.get_avatar, user_id)
     if not image_bytes:
@@ -191,7 +192,7 @@ async def user_avatar(user_id: int):
     return Response(image_bytes, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
-@app.post("/profile/avatar")
+@fastapi_app.post("/profile/avatar")
 async def change_avatar(request: Request, avatar: UploadFile = File(...)):
     user = current_user(request)
     if not user:
@@ -213,7 +214,7 @@ async def change_avatar(request: Request, avatar: UploadFile = File(...)):
     return RedirectResponse("/friends?message=Profile+photo+updated", status_code=303)
 
 
-@app.post("/profile/name")
+@fastapi_app.post("/profile/name")
 async def change_display_name(request: Request, display_name: str = Form(...)):
     user = current_user(request)
     if not user:
@@ -225,7 +226,7 @@ async def change_display_name(request: Request, display_name: str = Form(...)):
     return RedirectResponse("/friends?message=Name+must+be+1+to+80+characters", status_code=303)
 
 
-@app.get("/chats", response_class=HTMLResponse)
+@fastapi_app.get("/chats", response_class=HTMLResponse)
 async def chats_page(request: Request, with_user: int = 0, conversation: int = 0):
     user = current_user(request)
     if not user:
@@ -237,12 +238,14 @@ async def chats_page(request: Request, with_user: int = 0, conversation: int = 0
             return RedirectResponse(f"/chats?conversation={conversation_id}", status_code=303)
     messages = storage.read_chat(user["id"], conversation) if conversation else []
     friend_requests = await asyncio.to_thread(storage.list_pending_requests, user["id"])
-    return page(request, "chats.html", user=user, chats=storage.list_user_chats(user["id"]),
+    chats = await asyncio.to_thread(storage.list_user_chats, user["id"])
+    active_partner = next((chat for chat in chats if chat["id"] == conversation), None)
+    return page(request, "chats.html", user=user, chats=chats, active_partner=active_partner,
                 has_requests=bool(friend_requests), active_id=conversation, messages=messages,
                 notice="" if messages is not None else "Chat access nahi hai.")
 
 
-@app.post("/chats/{conversation_id}/send")
+@fastapi_app.post("/chats/{conversation_id}/send")
 async def send_chat_message(request: Request, conversation_id: int, body: str = Form(...)):
     user = current_user(request)
     if not user:
@@ -261,7 +264,7 @@ async def send_chat_message(request: Request, conversation_id: int, body: str = 
     return RedirectResponse(f"/chats?conversation={conversation_id}", status_code=303)
 
 
-@app.post("/logout")
+@fastapi_app.post("/logout")
 async def logout(request: Request):
     token = request.cookies.get(SESSION_COOKIE)
     if token:
@@ -284,7 +287,7 @@ async def connect(sid, environ, auth=None):
     user = await asyncio.to_thread(storage.get_session_user, token_hash)
     if not user:
         return False
-    await sio.save_session(sid, {"user_id": user["id"], "token_hash": token_hash})
+    socket_sessions[sid] = {"user_id": user["id"], "token_hash": token_hash}
     await sio.enter_room(sid, f"user:{user['id']}")
     await sio.enter_room(sid, f"session:{token_hash}")
 
@@ -294,8 +297,10 @@ async def join_chat(sid, data):
     """Join a chat room only if the current user is a member in PostgreSQL."""
     try:
         conversation_id = int(data["conversation_id"])
-        session = await sio.get_session(sid)
     except (KeyError, TypeError, ValueError):
+        return {"ok": False}
+    session = socket_sessions.get(sid)
+    if not session:
         return {"ok": False}
     user = await asyncio.to_thread(storage.get_session_user, session["token_hash"])
     if not user:
@@ -313,10 +318,12 @@ async def socket_send_message(sid, data):
     try:
         conversation_id = int(data["conversation_id"])
         body = str(data["body"]).strip()
-        session = await sio.get_session(sid)
     except (KeyError, TypeError, ValueError):
         return {"ok": False}
     if not body or len(body) > 5000:
+        return {"ok": False}
+    session = socket_sessions.get(sid)
+    if not session:
         return {"ok": False}
     user = await asyncio.to_thread(storage.get_session_user, session["token_hash"])
     if not user:
@@ -332,3 +339,15 @@ async def socket_send_message(sid, data):
         "created_at": saved["created_at"].isoformat(),
     }, room=f"chat:{conversation_id}")
     return {"ok": True}
+
+
+@sio.event
+async def disconnect(sid, reason=None):
+    """Forget this socket's in-memory session when the connection closes."""
+    socket_sessions.pop(sid, None)
+
+
+# Export the wrapped app under the usual `app` name so `uvicorn ...:app` starts both.
+app = socketio.ASGIApp(sio, fastapi_app)
+# Keep the explicit name working for anyone already using the earlier command.
+socket_app = app
