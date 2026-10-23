@@ -97,8 +97,14 @@ def init_db():
                 conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
                 sender_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 body TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 5000),
+                attachment_kind VARCHAR(8),
+                attachment_mime VARCHAR(80),
+                attachment_data BYTEA,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_kind VARCHAR(8);
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_mime VARCHAR(80);
+            ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_data BYTEA;
             CREATE INDEX IF NOT EXISTS messages_conversation_time_idx
                 ON messages (conversation_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions (user_id);
@@ -268,9 +274,10 @@ def read_chat(user_id, conversation_id):
         if not cur.fetchone():
             return None
         # Select the newest page first, then display those messages oldest to newest.
-        cur.execute("""SELECT recent.id, recent.body, recent.created_at, recent.username, recent.display_name
+        cur.execute("""SELECT recent.id, recent.body, recent.created_at, recent.username, recent.display_name,
+            recent.attachment_kind
             FROM (
-                SELECT m.id, m.body, m.created_at, u.username, u.display_name
+                SELECT m.id, m.body, m.created_at, u.username, u.display_name, m.attachment_kind
                 FROM messages m JOIN users u ON u.id=m.sender_id
                 WHERE m.conversation_id=%s
                 ORDER BY m.created_at DESC LIMIT 100
@@ -289,6 +296,31 @@ def save_message(user_id, conversation_id, body):
         cur.execute("""INSERT INTO messages (conversation_id, sender_id, body)
             VALUES (%s, %s, %s) RETURNING id, created_at""", (conversation_id, user_id, body))
         return cur.fetchone()
+
+
+def save_attachment(user_id, conversation_id, kind, mime_type, data):
+    """Save an image or voice note after verifying chat membership."""
+    label = "[Image]" if kind == "image" else "[Voice note]"
+    with get_cursor() as cur:
+        cur.execute("SELECT 1 FROM conversation_members WHERE conversation_id=%s AND user_id=%s",
+                    (conversation_id, user_id))
+        if not cur.fetchone():
+            return False
+        cur.execute("""INSERT INTO messages
+            (conversation_id, sender_id, body, attachment_kind, attachment_mime, attachment_data)
+            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id, created_at""",
+            (conversation_id, user_id, label, kind, mime_type, psycopg2.Binary(data)))
+        return cur.fetchone()
+
+
+def get_message_attachment(user_id, conversation_id, message_id):
+    with get_cursor() as cur:
+        cur.execute("""SELECT m.attachment_mime, m.attachment_data FROM messages m
+            JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=%s
+            WHERE m.conversation_id=%s AND m.id=%s AND m.attachment_data IS NOT NULL""",
+            (user_id, conversation_id, message_id))
+        row = cur.fetchone()
+        return (row["attachment_mime"], bytes(row["attachment_data"])) if row else None
 
 
 def pending_request_count(user_id):

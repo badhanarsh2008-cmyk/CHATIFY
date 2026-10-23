@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
   <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" async></script>
   <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('frontend', path='/styles/chats.css') }}?v=7">
+  <link rel="stylesheet" href="{{ url_for('frontend', path='/styles/chats.css') }}?v=9">
   <title>{% if active_partner %}{{ active_partner.display_name }} · {% endif %}Chatify</title>
 </head>
 <body class="chat-body">
@@ -51,13 +51,21 @@
     <section class="chat-layout" data-conversation-id="{{ active_id }}" data-user-id="{{ user.id }}" aria-label="Chat with {{ active_partner.display_name }}">
       <div class="message-list" id="message-list">
         {% for message in messages %}
-        <article class="message"><strong>{{ message.display_name }}</strong><p>{{ message.body }}</p><time>{{ message.created_at.strftime('%b %d, %H:%M') }}</time></article>
+        <article class="message" data-message-id="{{ message.id }}"><strong>{{ message.display_name }}</strong>
+          {% if message.attachment_kind == 'image' %}<img class="message-image" src="/chats/{{ active_id }}/messages/{{ message.id }}/attachment" alt="Shared image" loading="lazy">
+          {% elif message.attachment_kind == 'audio' %}<audio class="message-audio" controls preload="none" src="/chats/{{ active_id }}/messages/{{ message.id }}/attachment"></audio>
+          {% else %}<p>{{ message.body }}</p>{% endif %}
+          <time>{{ message.created_at.strftime('%b %d, %H:%M') }}</time></article>
         {% else %}<div class="chat-empty"><h1>Say hello</h1><p>Your conversation starts here.</p></div>{% endfor %}
       </div>
       <form class="send-form" id="message-form" action="/chats/{{ active_id }}/send" method="post">
+        <input id="image-input" class="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/gif" aria-label="Choose an image">
+        <button class="attachment-button" id="image-button" type="button" aria-label="Send an image" title="Send an image">＋</button>
         <input id="message-input" name="body" maxlength="5000" required placeholder="Write a message…" aria-label="Message">
         <button type="submit" aria-label="Send message">➤</button>
+        <button class="voice-button" id="voice-button" type="button" aria-label="Hold to record a voice note" title="Hold to record a voice note"><span aria-hidden="true">●</span></button>
       </form>
+      <p id="attachment-status" class="attachment-status" role="status" aria-live="polite"></p>
     </section>
     {% elif active_id %}
     <section class="chat-empty unavailable"><h1>Chat unavailable</h1><p>This conversation is unavailable or you are not a member.</p><a href="/friends">Back to Friends</a></section>
@@ -65,7 +73,7 @@
     <section class="chat-empty welcome"><h1>Choose a friend to message</h1><p>Open a conversation from your Friends page.</p><a href="/friends">Go to Friends</a></section>
     {% endif %}
   </main>
-  <script src="{{ url_for('frontend', path='/js/realtime.js') }}?v=7" defer></script>
+  <script src="{{ url_for('frontend', path='/js/realtime.js') }}?v=9" defer></script>
   <script src="{{ url_for('frontend', path='/js/script.js') }}?v=7" defer></script>
 </body>
 </html>

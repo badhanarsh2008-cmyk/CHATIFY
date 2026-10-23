@@ -141,7 +141,55 @@ function startRealtime() {
     const messageList = document.getElementById("message-list");
     const form = document.getElementById("message-form");
     const input = document.getElementById("message-input");
+    const imageInput = document.getElementById("image-input");
+    const imageButton = document.getElementById("image-button");
+    const voiceButton = document.getElementById("voice-button");
+    const attachmentStatus = document.getElementById("attachment-status");
     let joinedRoom = false;
+
+    const appendMessage = (message) => {
+      if (Number(message.conversation_id) !== conversationId || !messageList) return;
+      if (messageList.querySelector(`[data-message-id="${Number(message.id)}"]`)) return;
+      messageList.querySelector(".chat-empty")?.remove();
+      const item = document.createElement("article");
+      item.className = "message";
+      item.dataset.messageId = String(Number(message.id));
+      const sender = document.createElement("strong");
+      sender.textContent = message.display_name;
+      item.append(sender);
+      const attachmentUrl = message.attachment_url || (message.attachment_kind
+        ? `/chats/${conversationId}/messages/${message.id}/attachment` : "");
+      if (message.attachment_kind === "image") {
+        const image = document.createElement("img");
+        image.className = "message-image";
+        image.src = attachmentUrl;
+        image.alt = "Shared image";
+        image.loading = "lazy";
+        item.append(image);
+      } else if (message.attachment_kind === "audio") {
+        const audio = document.createElement("audio");
+        audio.className = "message-audio";
+        audio.controls = true;
+        audio.preload = "none";
+        audio.src = attachmentUrl;
+        item.append(audio);
+      } else {
+        const body = document.createElement("p");
+        body.textContent = message.body;
+        item.append(body);
+      }
+      const time = document.createElement("time");
+      time.textContent = new Date(message.created_at).toLocaleString();
+      item.append(time);
+      messageList.append(item);
+      const chip = document.querySelector(`.conversation-chip[data-conversation-id="${conversationId}"]`);
+      const preview = chip?.querySelector(".conversation-copy small");
+      if (preview) preview.textContent = message.body;
+      scrollToLatest();
+      if (Number(message.sender_id) !== Number(chat.dataset.userId)) {
+        socket.emit("mark_read", { conversation_id: conversationId });
+      }
+    };
 
     const scrollToLatest = () => {
       if (messageList) messageList.scrollTo({ top: messageList.scrollHeight, behavior: "auto" });
@@ -165,28 +213,96 @@ function startRealtime() {
     socket.on("disconnect", () => { joinedRoom = false; });
 
     socket.on("new_message", (message) => {
-      if (Number(message.conversation_id) !== conversationId || !messageList) return;
-      messageList.querySelector(".chat-empty")?.remove();
-
-      // Insert message content as text, never as HTML.
-      const item = document.createElement("article");
-      item.className = "message";
-      const sender = document.createElement("strong");
-      sender.textContent = message.display_name;
-      const body = document.createElement("p");
-      body.textContent = message.body;
-      const time = document.createElement("time");
-      time.textContent = new Date(message.created_at).toLocaleString();
-      item.append(sender, body, time);
-      messageList.append(item);
-      const chip = document.querySelector(`.conversation-chip[data-conversation-id="${conversationId}"]`);
-      const preview = chip?.querySelector(".conversation-copy small");
-      if (preview) preview.textContent = message.body;
-      scrollToLatest();
+      appendMessage(message);
       input?.focus();
-      if (Number(message.sender_id) !== Number(chat.dataset.userId)) {
-        socket.emit("mark_read", { conversation_id: conversationId });
+    });
+
+    async function uploadAttachment(file) {
+      if (!file) return;
+      if (attachmentStatus) attachmentStatus.textContent = "Sending attachment…";
+      const data = new FormData();
+      data.append("attachment", file);
+      try {
+        const response = await fetch(`/chats/${conversationId}/attachments`, {
+          method: "POST", body: data, credentials: "same-origin",
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Attachment could not be sent.");
+        if (result.message) appendMessage(result.message);
+        if (attachmentStatus) attachmentStatus.textContent = "";
+      } catch (error) {
+        if (attachmentStatus) attachmentStatus.textContent = error.message;
       }
+    }
+
+    imageButton?.addEventListener("click", () => imageInput?.click());
+    imageInput?.addEventListener("change", () => {
+      uploadAttachment(imageInput.files?.[0]);
+      imageInput.value = "";
+    });
+
+    let voiceHeld = false;
+    let recorder = null;
+    let microphoneStream = null;
+    let voiceChunks = [];
+    let cancelVoice = false;
+
+    const stopRecording = (cancel = false) => {
+      voiceHeld = false;
+      cancelVoice = cancel;
+      voiceButton?.classList.remove("recording");
+      if (recorder?.state === "recording") recorder.stop();
+    };
+
+    voiceButton?.addEventListener("pointerdown", async (event) => {
+      event.preventDefault();
+      if (voiceHeld || !navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+        if (attachmentStatus) attachmentStatus.textContent = "Voice recording is not available in this browser.";
+        return;
+      }
+      voiceHeld = true;
+      cancelVoice = false;
+      voiceButton.classList.add("recording");
+      voiceButton.setPointerCapture(event.pointerId);
+      if (attachmentStatus) attachmentStatus.textContent = "Recording… release to send";
+      try {
+        microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (!voiceHeld) {
+          microphoneStream.getTracks().forEach((track) => track.stop());
+          microphoneStream = null;
+          if (attachmentStatus) attachmentStatus.textContent = "";
+          return;
+        }
+        voiceChunks = [];
+        recorder = new MediaRecorder(microphoneStream);
+        recorder.addEventListener("dataavailable", (recordEvent) => {
+          if (recordEvent.data.size) voiceChunks.push(recordEvent.data);
+        });
+        recorder.addEventListener("stop", () => {
+          const blob = new Blob(voiceChunks, { type: recorder.mimeType || "audio/webm" });
+          microphoneStream?.getTracks().forEach((track) => track.stop());
+          microphoneStream = null;
+          if (!cancelVoice && blob.size) {
+            const extension = blob.type.includes("mp4") ? "m4a" : blob.type.includes("ogg") ? "ogg" : "webm";
+            uploadAttachment(new File([blob], `voice-note.${extension}`, { type: blob.type }));
+          } else if (attachmentStatus) {
+            attachmentStatus.textContent = "";
+          }
+          recorder = null;
+        });
+        recorder.start();
+      } catch {
+        microphoneStream?.getTracks().forEach((track) => track.stop());
+        microphoneStream = null;
+        voiceButton.classList.remove("recording");
+        voiceHeld = false;
+        if (attachmentStatus) attachmentStatus.textContent = "Allow microphone access to record a voice note.";
+      }
+    });
+    voiceButton?.addEventListener("pointerup", () => stopRecording());
+    voiceButton?.addEventListener("pointercancel", () => stopRecording(true));
+    voiceButton?.addEventListener("lostpointercapture", () => {
+      if (voiceHeld) stopRecording(true);
     });
 
     form?.addEventListener("submit", async (event) => {

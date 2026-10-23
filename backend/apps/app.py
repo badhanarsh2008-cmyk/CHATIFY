@@ -13,7 +13,7 @@ from urllib.parse import quote
 import psycopg2
 import socketio
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -296,6 +296,77 @@ async def send_chat_message(request: Request, conversation_id: int, body: str = 
             for recipient_id in recipients:
                 await sio.emit("unread_message", {"conversation_id": conversation_id, "body": body}, room=f"user:{recipient_id}")
     return RedirectResponse(f"/chats?conversation={conversation_id}", status_code=303)
+
+
+async def publish_attachment_message(user, conversation_id, saved, kind):
+    message = {
+        "conversation_id": conversation_id,
+        "id": saved["id"],
+        "body": "[Image]" if kind == "image" else "[Voice note]",
+        "attachment_kind": kind,
+        "attachment_url": f"/chats/{conversation_id}/messages/{saved['id']}/attachment",
+        "sender_id": user["id"],
+        "display_name": user["display_name"],
+        "created_at": saved["created_at"].isoformat(),
+    }
+    await sio.emit("new_message", message, room=f"chat:{conversation_id}")
+    recipients = await asyncio.to_thread(storage.conversation_recipient_ids, conversation_id, user["id"])
+    for recipient_id in recipients:
+        await sio.emit("unread_message", {"conversation_id": conversation_id, "body": message["body"]},
+                       room=f"user:{recipient_id}")
+    return message
+
+
+@fastapi_app.post("/chats/{conversation_id}/attachments")
+async def send_chat_attachment(request: Request, conversation_id: int, attachment: UploadFile = File(...)):
+    user = await current_user(request)
+    if not user:
+        return JSONResponse({"error": "Please sign in again."}, status_code=401)
+    raw_data = await attachment.read(10 * 1024 * 1024 + 1)
+    if not raw_data or len(raw_data) > 10 * 1024 * 1024:
+        return JSONResponse({"error": "Attachments must be under 10 MB."}, status_code=413)
+
+    mime_type = (attachment.content_type or "").split(";")[0].lower()
+    if mime_type in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
+        try:
+            with Image.open(io.BytesIO(raw_data)) as source:
+                if source.format not in {"JPEG", "PNG", "WEBP", "GIF"}:
+                    raise ValueError("Unsupported image format")
+                if source.width * source.height > 40_000_000:
+                    raise ValueError("Image dimensions are too large")
+                image = source.convert("RGB")
+                image.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+                output = io.BytesIO()
+                image.save(output, format="JPEG", quality=85, optimize=True)
+                raw_data, mime_type, kind = output.getvalue(), "image/jpeg", "image"
+        except (UnidentifiedImageError, OSError, ValueError):
+            return JSONResponse({"error": "Choose a valid JPG, PNG, WEBP, or GIF image."}, status_code=400)
+    elif mime_type in {"audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav", "audio/x-wav"}:
+        if mime_type == "audio/x-wav":
+            mime_type = "audio/wav"
+        kind = "audio"
+    else:
+        return JSONResponse({"error": "Choose an image or record a supported voice note."}, status_code=400)
+
+    saved = await asyncio.to_thread(storage.save_attachment, user["id"], conversation_id,
+                                    "image" if kind == "image" else "audio", mime_type, raw_data)
+    if not saved:
+        return JSONResponse({"error": "This conversation is unavailable."}, status_code=403)
+    message = await publish_attachment_message(user, conversation_id, saved, "image" if kind == "image" else "audio")
+    return JSONResponse({"ok": True, "message": message})
+
+
+@fastapi_app.get("/chats/{conversation_id}/messages/{message_id}/attachment")
+async def chat_attachment(request: Request, conversation_id: int, message_id: int):
+    user = await current_user(request)
+    if not user:
+        return Response(status_code=401)
+    attachment = await asyncio.to_thread(storage.get_message_attachment, user["id"], conversation_id, message_id)
+    if not attachment:
+        return Response(status_code=404)
+    mime_type, data = attachment
+    return Response(data, media_type=mime_type,
+                    headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"})
 
 
 @fastapi_app.post("/logout")

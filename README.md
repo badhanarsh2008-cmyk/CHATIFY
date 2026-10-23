@@ -1,6 +1,6 @@
 # Chatify
 
-Chatify is a FastAPI app with PostgreSQL backed accounts, friend requests, and private text conversations. The code intentionally uses plain `psycopg2` cursors in `backend/storage/main.py` so the database queries stay visible and easy to learn from.
+Chatify is a FastAPI app with PostgreSQL backed accounts, friend requests, and private conversations with text, image, and voice note messages. The code intentionally uses plain `psycopg2` cursors in `backend/storage/main.py` so the database queries stay visible and easy to learn from.
 
 ## Local setup
 
@@ -30,4 +30,4 @@ When somebody sends a request, a `friendship_requests` row is added. The recipie
 
 ## Current scope
 
-Signup, sign-in, persistent sessions, editable display names, profile photo updates, friend requests, a searchable Friends list, and persisted one-to-one chats are implemented. Friend-only online/offline presence is implemented. Email verification, password reset, group chats, and Aryaki provider integration still need their own implementation and configuration.
+Signup, sign-in, persistent sessions, editable display names, profile photo updates, friend requests, a searchable Friends list, and persisted one-to-one chats with text, image, and voice note messages are implemented. Friend-only online/offline presence is implemented. Email verification, password reset, group chats, and Aryaki provider integration still need their own implementation and configuration.
