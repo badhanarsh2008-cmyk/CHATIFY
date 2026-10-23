@@ -149,6 +149,7 @@ async def friends_page(request: Request, search: str = "", message: str = ""):
     return page(request, "friends.html", user=user,
                 friends=storage.list_friends(user["id"], search.strip()),
                 requests=friend_requests, has_requests=bool(friend_requests), search=search,
+                has_unread_messages=storage.unread_message_count(user["id"]) > 0,
                 notice=message)
 
 
@@ -237,11 +238,14 @@ async def chats_page(request: Request, with_user: int = 0, conversation: int = 0
         if conversation_id:
             return RedirectResponse(f"/chats?conversation={conversation_id}", status_code=303)
     messages = storage.read_chat(user["id"], conversation) if conversation else []
+    if conversation and messages is not None:
+        storage.mark_chat_read(user["id"], conversation)
     friend_requests = await asyncio.to_thread(storage.list_pending_requests, user["id"])
     chats = await asyncio.to_thread(storage.list_user_chats, user["id"])
     active_partner = next((chat for chat in chats if chat["id"] == conversation), None)
     return page(request, "chats.html", user=user, chats=chats, active_partner=active_partner,
                 has_requests=bool(friend_requests), active_id=conversation, messages=messages,
+                has_unread_messages=any(chat["unread_count"] for chat in chats),
                 notice="" if messages is not None else "Chat access nahi hai.")
 
 
@@ -254,13 +258,18 @@ async def send_chat_message(request: Request, conversation_id: int, body: str = 
     if body and len(body) <= 5000:
         saved = storage.save_message(user["id"], conversation_id, body)
         if saved:
-            await sio.emit("new_message", {
+            message = {
                 "conversation_id": conversation_id,
                 "id": saved["id"],
                 "body": body,
+                "sender_id": user["id"],
                 "display_name": user["display_name"],
                 "created_at": saved["created_at"].isoformat(),
-            }, room=f"chat:{conversation_id}")
+            }
+            await sio.emit("new_message", message, room=f"chat:{conversation_id}")
+            recipients = await asyncio.to_thread(storage.conversation_recipient_ids, conversation_id, user["id"])
+            for recipient_id in recipients:
+                await sio.emit("unread_message", {"conversation_id": conversation_id, "body": body}, room=f"user:{recipient_id}")
     return RedirectResponse(f"/chats?conversation={conversation_id}", status_code=303)
 
 
@@ -309,7 +318,26 @@ async def join_chat(sid, data):
     if messages is None:
         return {"ok": False}
     await sio.enter_room(sid, f"chat:{conversation_id}")
+    unread_count = await asyncio.to_thread(storage.mark_chat_read, user["id"], conversation_id)
+    await sio.emit("unread_count", {"count": unread_count or 0}, room=f"user:{user['id']}")
     return {"ok": True}
+
+
+@sio.on("mark_read")
+async def mark_read(sid, data):
+    """Mark a chat read while it is open, so new-message dots clear live."""
+    session = socket_sessions.get(sid)
+    if not session:
+        return {"ok": False}
+    try:
+        conversation_id = int(data["conversation_id"])
+    except (KeyError, TypeError, ValueError):
+        return {"ok": False}
+    unread_count = await asyncio.to_thread(storage.mark_chat_read, session["user_id"], conversation_id)
+    if unread_count is None:
+        return {"ok": False}
+    await sio.emit("unread_count", {"count": unread_count}, room=f"user:{session['user_id']}")
+    return {"ok": True, "count": unread_count}
 
 
 @sio.on("send_message")
@@ -335,9 +363,13 @@ async def socket_send_message(sid, data):
         "conversation_id": conversation_id,
         "id": saved["id"],
         "body": body,
+        "sender_id": user["id"],
         "display_name": user["display_name"],
         "created_at": saved["created_at"].isoformat(),
     }, room=f"chat:{conversation_id}")
+    recipients = await asyncio.to_thread(storage.conversation_recipient_ids, conversation_id, user["id"])
+    for recipient_id in recipients:
+        await sio.emit("unread_message", {"conversation_id": conversation_id, "body": body}, room=f"user:{recipient_id}")
     return {"ok": True}
 
 

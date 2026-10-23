@@ -4,9 +4,13 @@ function startRealtime() {
   // Register every handler before opening the connection, so no first event is missed.
   const socket = window.io({ autoConnect: false });
   const friendDots = document.querySelectorAll("[data-friend-dot]");
+  const chatDots = document.querySelectorAll("[data-chat-dot]");
 
   const showFriendDot = () => friendDots.forEach((dot) => dot.classList.remove("hidden"));
   const setFriendDot = (count) => friendDots.forEach((dot) => {
+    dot.classList.toggle("hidden", Number(count) < 1);
+  });
+  const setChatDot = (count) => chatDots.forEach((dot) => {
     dot.classList.toggle("hidden", Number(count) < 1);
   });
 
@@ -73,6 +77,24 @@ function startRealtime() {
   });
 
   socket.on("friend_requests_count", (data) => setFriendDot(data.count));
+  socket.on("unread_count", (data) => setChatDot(data.count));
+  socket.on("unread_message", (data) => {
+    const conversationId = Number(data.conversation_id);
+    const activeConversation = Number(document.querySelector(".chat-layout[data-conversation-id]")?.dataset.conversationId || 0);
+    const chip = document.querySelector(`.conversation-chip[data-conversation-id="${conversationId}"]`);
+
+    if (chip && data.body) {
+      const preview = chip.querySelector(".conversation-copy small");
+      if (preview) preview.textContent = data.body;
+    }
+    if (activeConversation === conversationId) {
+      socket.emit("mark_read", { conversation_id: conversationId });
+      return;
+    }
+
+    setChatDot(1);
+    chip?.querySelector("[data-conversation-dot]")?.classList.remove("hidden");
+  });
   socket.on("session_revoked", () => socket.disconnect());
 
   const chat = document.querySelector(".chat-layout[data-conversation-id]");
@@ -126,8 +148,14 @@ function startRealtime() {
       time.textContent = new Date(message.created_at).toLocaleString();
       item.append(sender, body, time);
       messageList.append(item);
+      const chip = document.querySelector(`.conversation-chip[data-conversation-id="${conversationId}"]`);
+      const preview = chip?.querySelector(".conversation-copy small");
+      if (preview) preview.textContent = message.body;
       scrollToLatest();
       input?.focus();
+      if (Number(message.sender_id) !== Number(chat.dataset.userId)) {
+        socket.emit("mark_read", { conversation_id: conversationId });
+      }
     });
 
     form?.addEventListener("submit", async (event) => {

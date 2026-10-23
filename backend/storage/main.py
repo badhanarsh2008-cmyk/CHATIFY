@@ -88,8 +88,10 @@ def init_db():
                 conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
                 user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                last_read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 PRIMARY KEY (conversation_id, user_id)
             );
+            ALTER TABLE conversation_members ADD COLUMN IF NOT EXISTS last_read_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
             CREATE TABLE IF NOT EXISTS messages (
                 id BIGSERIAL PRIMARY KEY,
                 conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
@@ -217,13 +219,45 @@ def list_user_chats(user_id):
     with get_cursor() as cur:
         cur.execute("""SELECT c.id, u.id AS friend_id, u.username, u.display_name,
             (u.avatar_data IS NOT NULL) AS has_avatar,
-            (SELECT body FROM messages WHERE conversation_id=c.id ORDER BY created_at DESC LIMIT 1) AS last_message
+            (SELECT body FROM messages WHERE conversation_id=c.id ORDER BY created_at DESC, id DESC LIMIT 1) AS last_message,
+            (SELECT created_at FROM messages WHERE conversation_id=c.id ORDER BY created_at DESC, id DESC LIMIT 1) AS last_message_at,
+            (SELECT COUNT(*) FROM messages unread
+                WHERE unread.conversation_id=c.id AND unread.sender_id<>%s
+                AND unread.created_at>mine.last_read_at) AS unread_count
             FROM conversations c
             JOIN conversation_members mine ON mine.conversation_id=c.id AND mine.user_id=%s
             JOIN conversation_members theirs ON theirs.conversation_id=c.id AND theirs.user_id<>%s
             JOIN users u ON u.id=theirs.user_id
-            ORDER BY c.id DESC""", (user_id, user_id))
+            ORDER BY COALESCE((SELECT MAX(created_at) FROM messages WHERE conversation_id=c.id), c.created_at) DESC, c.id DESC""", (user_id, user_id, user_id))
         return cur.fetchall()
+
+
+def mark_chat_read(user_id, conversation_id):
+    """Move this member's read cursor forward and return their remaining unread total."""
+    with get_cursor() as cur:
+        cur.execute("""UPDATE conversation_members SET last_read_at=NOW()
+            WHERE conversation_id=%s AND user_id=%s""", (conversation_id, user_id))
+        if cur.rowcount != 1:
+            return None
+        cur.execute("""SELECT COUNT(*) AS count FROM messages m
+            JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=%s
+            WHERE m.sender_id<>%s AND m.created_at>cm.last_read_at""", (user_id, user_id))
+        return cur.fetchone()["count"]
+
+
+def unread_message_count(user_id):
+    with get_cursor() as cur:
+        cur.execute("""SELECT COUNT(*) AS count FROM messages m
+            JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=%s
+            WHERE m.sender_id<>%s AND m.created_at>cm.last_read_at""", (user_id, user_id))
+        return cur.fetchone()["count"]
+
+
+def conversation_recipient_ids(conversation_id, sender_id):
+    with get_cursor() as cur:
+        cur.execute("SELECT user_id FROM conversation_members WHERE conversation_id=%s AND user_id<>%s",
+                    (conversation_id, sender_id))
+        return [row["user_id"] for row in cur.fetchall()]
 
 
 def read_chat(user_id, conversation_id):

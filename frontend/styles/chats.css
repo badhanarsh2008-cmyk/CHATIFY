@@ -104,6 +104,38 @@ body { overflow: hidden; }
 
 .chat-logout:hover { background: #f1f7f6; }
 
+.chat-controls { display: flex; align-items: center; justify-self: end; gap: 11px; }
+.chat-controls form { margin: 0; }
+.theme-toggle {
+  position: relative; width: 58px; height: 34px; padding: 0; flex: none;
+  border: 1px solid #c8ded9; border-radius: 999px; background: #e4f0ed; color: #26665e; cursor: pointer;
+}
+.theme-toggle svg { position: absolute; top: 8px; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.toggle-sun { left: 7px; }
+.toggle-moon { right: 7px; opacity: .45; }
+.toggle-thumb { position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px #153d3a24; transition: transform .25s ease; }
+.chat-nav-dot, .chat-unread-dot { width: 9px; height: 9px; flex: none; border-radius: 50%; background: #ed4050; box-shadow: 0 0 0 3px #ed40501a; }
+.chat-nav-dot { display: inline-block; margin-left: 7px; vertical-align: middle; }
+.chat-nav-dot.hidden, .chat-unread-dot.hidden { display: none; }
+
+.conversation-strip {
+  display: flex; min-height: 78px; flex: none; align-items: stretch; gap: 9px;
+  overflow-x: auto; padding: 12px clamp(16px, 4vw, 54px);
+  border-bottom: 1px solid #e8eeec; scrollbar-width: thin;
+}
+.conversation-chip {
+  display: flex; min-width: 190px; max-width: 260px; align-items: center; gap: 10px;
+  padding: 9px 11px; border: 1px solid #e4e9e8; border-radius: 12px; background: #fff;
+  color: inherit; text-decoration: none; transition: border-color .15s, background .15s;
+}
+.conversation-chip:hover, .conversation-chip.active { border-color: #8dbbb4; background: #edf6f4; }
+.conversation-avatar { width: 40px; height: 40px; flex: none; border-radius: 50%; object-fit: cover; }
+.conversation-copy { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.conversation-copy strong, .conversation-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-copy strong { font-size: 12px; }
+.conversation-copy small { color: #81909b; font-size: 11px; }
+.no-conversations { align-self: center; color: #81909b; font-size: 13px; }
+
 .chat-layout {
   display: flex;
   width: 100%;
@@ -238,6 +270,25 @@ body { overflow: hidden; }
   font-size: 13px;
 }
 
+body.dark-theme { color-scheme: dark; color: #e8f0f1; background: #0b171b; }
+body.dark-theme .chat-page { background: linear-gradient(120deg, #102126, #0b171b); }
+body.dark-theme .chat-topbar, body.dark-theme .conversation-chip, body.dark-theme .message,
+body.dark-theme .send-form input { border-color: #294146; background: #17292e; color: #e8f0f1; }
+body.dark-theme .conversation-strip, body.dark-theme .send-form { border-color: #263a3f; }
+body.dark-theme .conversation-chip:hover, body.dark-theme .conversation-chip.active { border-color: #5eaaa1; background: #203a3d; }
+body.dark-theme .conversation-copy small, body.dark-theme .chat-person small,
+body.dark-theme .message time { color: #a1b1b8; }
+body.dark-theme .message p { color: #e0eaec; }
+body.dark-theme .message strong, body.dark-theme .back-to-friends { color: #8bd0c6; }
+body.dark-theme .chat-logout { border-color: #36585b; background: #20383d; color: #d4e5e5; }
+body.dark-theme .theme-toggle { border-color: #36585b; background: #234247; color: #b9e2dc; }
+body.dark-theme .toggle-thumb { transform: translateX(24px); background: #c9e9e3; }
+body.dark-theme .toggle-sun { opacity: .45; }
+body.dark-theme .toggle-moon { opacity: 1; }
+body.dark-theme .send-form input:focus { border-color: #66b9ae; }
+body.dark-theme .chat-empty h1 { color: #e8f0f1; }
+body.dark-theme .chat-empty p, body.dark-theme .no-conversations { color: #a1b1b8; }
+
 @media (max-width: 600px) {
   .chat-topbar {
     height: 66px;
@@ -245,12 +296,19 @@ body { overflow: hidden; }
     padding: 0 12px;
   }
 
+  .chat-controls { gap: 7px; }
+  .theme-toggle { width: 52px; height: 32px; }
+  .toggle-thumb { width: 24px; height: 24px; }
+  body.dark-theme .toggle-thumb { transform: translateX(20px); }
+
   .back-to-friends span { display: none; }
   .chat-person { justify-self: start; margin-left: 9px; }
   .chat-avatar { width: 38px; height: 38px; }
   .chat-person strong { max-width: 55vw; }
   .chat-logout { padding: 7px 9px; font-size: 11px; }
   .chat-layout { padding: 0 14px; }
+  .conversation-strip { min-height: 70px; padding: 9px 14px; }
+  .conversation-chip { min-width: 165px; padding: 7px 9px; }
   .message-list { padding: 17px 0; }
   .message { max-width: 90%; }
   .send-form { gap: 8px; }

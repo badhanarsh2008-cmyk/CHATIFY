@@ -5,7 +5,7 @@
   <meta name="theme-color" content="#f7faf9">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/CHATIFY/frontend/styles/friends.css">
+  <link rel="stylesheet" href="/CHATIFY/frontend/styles/friends.css?v=2">
   <link rel="stylesheet" href="/CHATIFY/frontend/styles/profile.css">
   <title>Friends · Chatify</title>
 </head>
@@ -15,7 +15,7 @@
       <a class="brand" href="/"><span class="brand-mark">C†</span> Chatify</a>
       <nav aria-label="Main navigation">
         <a class="nav-link active" href="/friends"> <span>♧</span> Friends <span class="nav-dot {% if not has_requests %}hidden{% endif %}" data-friend-dot aria-label="New friend request"></span></a>
-        <a class="nav-link" href="/chats"><span>▢</span> Chats</a>
+        <a class="nav-link" href="/chats"><span>▢</span> Chats <i class="nav-dot {% if not has_unread_messages %}hidden{% endif %}" data-chat-dot aria-label="Unread messages"></i></a>
         <a class="nav-link" href="#settings"><span>⚙</span> Settings</a>
       </nav>
       <div class="account-row">
@@ -72,6 +72,7 @@
     </main>
   </div>
   <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" defer></script>
-  <script src="{{ url_for('frontend', path='/js/realtime.js') }}?v=3" defer></script>
+  <script src="{{ url_for('frontend', path='/js/realtime.js') }}?v=4" defer></script>
+  <script src="{{ url_for('frontend', path='/js/script.js') }}?v=1" defer></script>
 </body>
 </html>
