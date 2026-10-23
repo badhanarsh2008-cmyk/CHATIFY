@@ -35,6 +35,18 @@ sio = socketio.AsyncServer(async_mode="asgi")
 socket_sessions = {}
 
 
+def user_is_online(user_id):
+    return any(session["user_id"] == user_id for session in socket_sessions.values())
+
+
+async def broadcast_presence(user_id, online):
+    """Send presence only to users who are friends with the person changing state."""
+    friends = await asyncio.to_thread(storage.list_friends, user_id)
+    for friend in friends:
+        await sio.emit("presence_update", {"user_id": user_id, "online": online},
+                       room=f"user:{friend['id']}")
+
+
 @fastapi_app.on_event("startup")
 def prepare_database():
     # Tables are created once if missing; set DB_* values before starting the server.
@@ -101,7 +113,7 @@ async def register(request: Request, username: str = Form(...), display_name: st
     elif "@" not in email or len(email) > 254:
         error = "please enter valid email address"
     elif not 1 <= len(display_name) <= 80:
-        error = "Display name should only contain 10-20 characters."
+        error = "Display name must be 1 to 80 characters."
     elif not 8 <= len(password) <= 128:
         error = "Password should only contain 8-128 characters."
     elif password != password_confirmation:
@@ -296,9 +308,24 @@ async def connect(sid, environ, auth=None):
     user = await asyncio.to_thread(storage.get_session_user, token_hash)
     if not user:
         return False
+    already_online = user_is_online(user["id"])
     socket_sessions[sid] = {"user_id": user["id"], "token_hash": token_hash}
     await sio.enter_room(sid, f"user:{user['id']}")
     await sio.enter_room(sid, f"session:{token_hash}")
+    if not already_online:
+        sio.start_background_task(broadcast_presence, user["id"], True)
+
+
+@sio.on("sync_presence")
+async def sync_presence(sid):
+    """Load friend presence after the socket handshake is established."""
+    session = socket_sessions.get(sid)
+    if not session:
+        return {"ok": False}
+    friends = await asyncio.to_thread(storage.list_friends, session["user_id"])
+    online_ids = {friend["id"] for friend in friends if user_is_online(friend["id"])}
+    await sio.emit("presence_snapshot", {"online_user_ids": list(online_ids)}, to=sid)
+    return {"ok": True}
 
 
 @sio.on("join_chat")
@@ -376,7 +403,9 @@ async def socket_send_message(sid, data):
 @sio.event
 async def disconnect(sid, reason=None):
     """Forget this socket's in-memory session when the connection closes."""
-    socket_sessions.pop(sid, None)
+    session = socket_sessions.pop(sid, None)
+    if session and not user_is_online(session["user_id"]):
+        await broadcast_presence(session["user_id"], False)
 
 
 # Export the wrapped app under the usual `app` name so `uvicorn ...:app` starts both.

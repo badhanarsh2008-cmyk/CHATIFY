@@ -24,6 +24,33 @@ body { overflow: hidden; }
   background: linear-gradient(120deg, #fff, #f8fbfa);
 }
 
+.chat-loading {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #f7faf9;
+  color: #17615d;
+  font-size: 14px;
+  font-weight: 800;
+  transition: opacity .2s ease, visibility .2s ease;
+}
+.chat-loading.hidden { visibility: hidden; opacity: 0; pointer-events: none; }
+.loading-spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid #cfe0de;
+  border-top-color: #075b56;
+  border-radius: 50%;
+  animation: chat-spin .7s linear infinite;
+}
+@keyframes chat-spin { to { transform: rotate(360deg); } }
+body.dark-theme .chat-loading { background: #0b171b; color: #8bd0c6; }
+body.dark-theme .loading-spinner { border-color: #294146; border-top-color: #8bd0c6; }
+
 .chat-topbar {
   display: grid;
   height: 76px;

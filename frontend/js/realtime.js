@@ -1,6 +1,8 @@
 // Connect the browser to the Python Socket.IO server using its login cookie.
+let realtimeStarted = false;
 function startRealtime() {
-  if (!window.io) return;
+  if (!window.io || realtimeStarted) return;
+  realtimeStarted = true;
   // Register every handler before opening the connection, so no first event is missed.
   const socket = window.io({ autoConnect: false });
   const friendDots = document.querySelectorAll("[data-friend-dot]");
@@ -13,6 +15,24 @@ function startRealtime() {
   const setChatDot = (count) => chatDots.forEach((dot) => {
     dot.classList.toggle("hidden", Number(count) < 1);
   });
+
+  const setPresence = (userId, online) => {
+    document.querySelectorAll(`[data-presence-user="${Number(userId)}"]`).forEach((presence) => {
+      presence.dataset.online = String(Boolean(online));
+      const label = presence.querySelector(".presence-label");
+      if (label) label.textContent = online ? "Online" : "Offline";
+      presence.setAttribute("aria-label", online ? "Online" : "Offline");
+    });
+  };
+
+  socket.on("presence_snapshot", (data) => {
+    const onlineIds = new Set((data.online_user_ids || []).map(Number));
+    document.querySelectorAll("[data-presence-user]").forEach((presence) => {
+      setPresence(presence.dataset.presenceUser, onlineIds.has(Number(presence.dataset.presenceUser)));
+    });
+  });
+  socket.on("presence_update", (data) => setPresence(data.user_id, data.online));
+  socket.on("connect", () => socket.emit("sync_presence"));
 
   socket.on("friend_request", (request) => {
     showFriendDot();
@@ -104,9 +124,17 @@ function startRealtime() {
     status.textContent = text;
     status.dataset.connected = String(connected);
   };
-  socket.on("connect", () => setStatus("Live", true));
+  const hideChatLoading = () => document.getElementById("chat-loading")?.classList.add("hidden");
+  const chatLoadingFallback = window.setTimeout(hideChatLoading, 2500);
+  socket.on("connect", () => {
+    setStatus("Live", true);
+  });
   socket.on("disconnect", () => setStatus("Reconnecting…", false));
-  socket.on("connect_error", () => setStatus("Offline · retrying", false));
+  socket.on("connect_error", () => {
+    setStatus("Offline · retrying", false);
+    window.clearTimeout(chatLoadingFallback);
+    hideChatLoading();
+  });
 
   if (chat) {
     const conversationId = Number(chat.dataset.conversationId);
@@ -129,6 +157,10 @@ function startRealtime() {
       socket.emit("join_chat", { conversation_id: conversationId }, (result) => {
         joinedRoom = Boolean(result && result.ok);
         scrollToLatest();
+        if (joinedRoom) {
+          window.clearTimeout(chatLoadingFallback);
+          hideChatLoading();
+        }
       });
     });
     socket.on("disconnect", () => { joinedRoom = false; });
@@ -219,6 +251,7 @@ if (window.io) {
   client.onerror = () => {
     const status = document.getElementById("socket-status");
     if (status) status.textContent = "Realtime client unavailable";
+    document.getElementById("chat-loading")?.classList.add("hidden");
   };
   document.head.append(client);
 }

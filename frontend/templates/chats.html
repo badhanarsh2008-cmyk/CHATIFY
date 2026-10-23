@@ -4,11 +4,18 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f7faf9">
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" async></script>
   <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('frontend', path='/styles/chats.css') }}?v=5">
+  <link rel="stylesheet" href="{{ url_for('frontend', path='/styles/chats.css') }}?v=6">
   <title>{% if active_partner %}{{ active_partner.display_name }} · {% endif %}Chatify</title>
 </head>
 <body class="chat-body">
+  {% if active_id and messages is not none and active_partner %}
+  <div class="chat-loading" id="chat-loading" role="status" aria-live="polite">
+    <span class="loading-spinner" aria-hidden="true"></span><span>Connecting to your chat…</span>
+  </div>
+  {% endif %}
   <main class="chat-page">
     <header class="chat-topbar">
       <a class="back-to-friends" href="/friends" aria-label="Back to friends">‹ <span>Friends</span><i class="chat-nav-dot {% if not has_unread_messages %}hidden{% endif %}" data-chat-dot></i></a>
@@ -58,8 +65,7 @@
     <section class="chat-empty welcome"><h1>Choose a friend to message</h1><p>Open a conversation from your Friends page.</p><a href="/friends">Go to Friends</a></section>
     {% endif %}
   </main>
-  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" defer></script>
-  <script src="{{ url_for('frontend', path='/js/realtime.js') }}?v=4" defer></script>
+  <script src="{{ url_for('frontend', path='/js/realtime.js') }}?v=6" defer></script>
   <script src="{{ url_for('frontend', path='/js/script.js') }}?v=1" defer></script>
 </body>
 </html>
