@@ -23,7 +23,7 @@ def connect():
         port=int(os.getenv("DB_PORT", "5432")),
         dbname=os.getenv("DB_NAME", "chatify_app"),
         user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD", "Arsh@2008"),
+        password=os.getenv("DB_PASSWORD","Arsh@2008"),
         connect_timeout=5,
     )
 
