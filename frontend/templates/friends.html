@@ -6,6 +6,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/CHATIFY/frontend/styles/friends.css">
+  <link rel="stylesheet" href="/CHATIFY/frontend/styles/profile.css">
   <title>Friends · Chatify</title>
 </head>
 <body>
@@ -13,13 +14,20 @@
     <aside class="sidebar">
       <a class="brand" href="/"><span class="brand-mark">C†</span> Chatify</a>
       <nav aria-label="Main navigation">
-        <a class="nav-link active" href="/friends"><span>♧</span> Friends</a>
+        <a class="nav-link active" href="/friends"> <span>♧</span> Friends <span class="nav-dot {% if not has_requests %}hidden{% endif %}" data-friend-dot aria-label="New friend request"></span></a>
         <a class="nav-link" href="/chats"><span>▢</span> Chats</a>
         <a class="nav-link" href="#settings"><span>⚙</span> Settings</a>
       </nav>
       <div class="account-row">
-        <span class="avatar avatar-small">{{ user.username[:1]|upper }}</span>
-        <span class="account-label"><strong>{{ user.username }}</strong><small>@{{ user.username }}</small></span>
+        <form action="/profile/avatar" method="post" enctype="multipart/form-data" class="avatar-form">
+          <label class="avatar-picker" title="Change profile photo">
+            {% if user.has_avatar %}<img class="avatar avatar-small" src="/users/{{ user.id }}/avatar" alt="Profile photo">
+            {% else %}<span class="avatar avatar-small">{{ user.display_name[:1]|upper }}</span>{% endif %}
+            <span class="avatar-edit">Edit</span>
+            <input type="file" name="avatar" accept="image/png,image/jpeg,image/webp" required onchange="this.form.submit()" aria-label="Choose profile photo">
+          </label>
+        </form>
+        <span class="account-label"><strong>{{ user.display_name }}</strong><small>@{{ user.username }}</small><details class="profile-name-edit"><summary>Edit name</summary><form action="/profile/name" method="post"><input name="display_name" value="{{ user.display_name }}" maxlength="80" required aria-label="Display name"><button type="submit">Save</button></form></details></span>
         <form action="/logout" method="post"><button class="logout" title="Sign out" aria-label="Sign out">⋮</button></form>
       </div>
     </aside>
@@ -29,7 +37,7 @@
       {% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
       <div class="toolbar">
         <form class="search-form" action="/friends" method="get">
-          <span aria-hidden="true">⌕</span><input name="search" value="{{ search }}" placeholder="Search by username…" aria-label="Search friends">
+          <span aria-hidden="true">⌕</span><input name="search" value="{{ search }}" placeholder="Search friends by username…" aria-label="Search friends">
         </form>
         <form action="/friends/add" method="post" class="add-form">
           <input name="username" placeholder="Username" aria-label="Username to add" required>
@@ -38,9 +46,11 @@
       </div>
 
       {% if requests %}
-      <section class="requests"><h2>Friend requests <span>{{ requests|length }}</span></h2>
-        {% for request_item in requests %}<div class="request-row"><span class="avatar">{{ request_item.username[:1]|upper }}</span>
-          <div class="friend-info"><strong>{{ request_item.username }}</strong><small>@{{ request_item.username }}</small></div>
+      <section class="requests" id="friend-requests"><h2>Friend requests <span data-request-count>{{ requests|length }}</span></h2>
+        {% for request_item in requests %}<div class="request-row">
+          {% if request_item.has_avatar %}<img class="avatar" src="/users/{{ request_item.sender_id }}/avatar" alt="">
+          {% else %}<span class="avatar">{{ request_item.display_name[:1]|upper }}</span>{% endif %}
+          <div class="friend-info"><strong>{{ request_item.display_name }}</strong><small>@{{ request_item.username }}</small></div>
           <form action="/friends/request/{{ request_item.id }}" method="post" class="request-actions">
             <button name="action" value="accept" class="accept-button">Accept</button><button name="action" value="reject" class="reject-button">Decline</button>
           </form></div>{% endfor %}
@@ -49,8 +59,9 @@
       <section class="friend-list" aria-label="Your friends">
         {% for friend in friends %}
         <article class="friend-card">
-          <span class="avatar color-{{ loop.index % 5 }}">{{ friend.username[:1]|upper }}</span>
-          <div class="friend-info"><strong>{{ friend.username }}</strong><small>@{{ friend.username }}</small><span class="presence"><i></i> Friend</span></div>
+          {% if friend.has_avatar %}<img class="avatar color-{{ loop.index % 5 }}" src="/users/{{ friend.id }}/avatar" alt="">
+          {% else %}<span class="avatar color-{{ loop.index % 5 }}">{{ friend.display_name[:1]|upper }}</span>{% endif %}
+          <div class="friend-info"><strong>{{ friend.display_name }}</strong><small>@{{ friend.username }}</small><span class="presence"><i></i> Friend</span></div>
           <a class="message-button" href="/chats?with_user={{ friend.id }}"><span>▢</span> Message</a>
           <button class="more-button" aria-label="More options">⋮</button>
         </article>
@@ -60,5 +71,7 @@
       </section>
     </main>
   </div>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" defer></script>
+  <script src="/CHATIFY/frontend/js/realtime.js" defer></script>
 </body>
 </html>

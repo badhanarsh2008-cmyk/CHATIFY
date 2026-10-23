@@ -52,11 +52,16 @@ def init_db():
                 id BIGSERIAL PRIMARY KEY,
                 username VARCHAR(30) NOT NULL UNIQUE,
                 username_normalized VARCHAR(30) NOT NULL UNIQUE,
+                display_name VARCHAR(80) NOT NULL DEFAULT '',
                 email VARCHAR(254) NOT NULL UNIQUE,
                 email_normalized VARCHAR(254) NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
+                avatar_data BYTEA,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(80) NOT NULL DEFAULT '';
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_data BYTEA;
+            UPDATE users SET display_name = username WHERE display_name = '';
             CREATE TABLE IF NOT EXISTS sessions (
                 id BIGSERIAL PRIMARY KEY,
                 user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -98,18 +103,18 @@ def init_db():
         """)
 
 
-def create_user(username, email, password_hash):
+def create_user(username, email, password_hash, display_name):
     with get_cursor() as cur:
         cur.execute("""INSERT INTO users
-            (username, username_normalized, email, email_normalized, password_hash)
-            VALUES (%s, %s, %s, %s, %s) RETURNING id""",
-            (username, username.lower(), email, email.lower(), password_hash))
+            (username, username_normalized, display_name, email, email_normalized, password_hash)
+            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+            (username, username.lower(), display_name, email, email.lower(), password_hash))
         return cur.fetchone()["id"]
 
 
 def find_user(identifier):
     with get_cursor() as cur:
-        cur.execute("""SELECT id, username, email, password_hash FROM users
+        cur.execute("""SELECT id, username, display_name, email, password_hash FROM users
             WHERE username_normalized = %s OR email_normalized = %s""",
             (identifier.lower(), identifier.lower()))
         return cur.fetchone()
@@ -123,7 +128,8 @@ def create_session(user_id, token_hash, expires_at):
 
 def get_session_user(token_hash):
     with get_cursor() as cur:
-        cur.execute("""SELECT u.id, u.username, u.email FROM users u
+        cur.execute("""SELECT u.id, u.username, u.display_name, u.email,
+            (u.avatar_data IS NOT NULL) AS has_avatar FROM users u
             JOIN sessions s ON s.user_id = u.id
             WHERE s.token_hash = %s AND s.expires_at > NOW()""", (token_hash,))
         return cur.fetchone()
@@ -136,7 +142,8 @@ def delete_session(token_hash):
 
 def list_friends(user_id, search=""):
     with get_cursor() as cur:
-        cur.execute("""SELECT u.id, u.username FROM friendship_requests f
+        cur.execute("""SELECT u.id, u.username, u.display_name,
+            (u.avatar_data IS NOT NULL) AS has_avatar FROM friendship_requests f
             JOIN users u ON u.id = CASE WHEN f.sender_id = %s THEN f.receiver_id ELSE f.sender_id END
             WHERE f.status = 'accepted' AND (f.sender_id = %s OR f.receiver_id = %s)
             AND u.username ILIKE %s ORDER BY u.username""",
@@ -146,7 +153,8 @@ def list_friends(user_id, search=""):
 
 def list_pending_requests(user_id):
     with get_cursor() as cur:
-        cur.execute("""SELECT f.id, u.username FROM friendship_requests f
+        cur.execute("""SELECT f.id, u.id AS sender_id, u.username, u.display_name,
+            (u.avatar_data IS NOT NULL) AS has_avatar FROM friendship_requests f
             JOIN users u ON u.id = f.sender_id
             WHERE f.receiver_id = %s AND f.status = 'pending' ORDER BY f.created_at""", (user_id,))
         return cur.fetchall()
@@ -157,18 +165,21 @@ def send_friend_request(sender_id, username):
         cur.execute("SELECT id FROM users WHERE username_normalized = %s", (username.lower(),))
         target = cur.fetchone()
         if not target or target["id"] == sender_id:
-            return False
+            return False, None, None, None
         receiver_id = target["id"]
         # If the other user already requested us, accept that request instead.
         cur.execute("""UPDATE friendship_requests SET status='accepted', updated_at=NOW()
             WHERE sender_id=%s AND receiver_id=%s AND status='pending' RETURNING id""",
             (receiver_id, sender_id))
         if cur.fetchone():
-            return True
+            return True, receiver_id, "accepted", None
         cur.execute("""INSERT INTO friendship_requests (sender_id, receiver_id)
-            VALUES (%s, %s) ON CONFLICT (sender_id, receiver_id) DO NOTHING""",
+            VALUES (%s, %s) ON CONFLICT (sender_id, receiver_id) DO NOTHING RETURNING id""",
             (sender_id, receiver_id))
-        return cur.rowcount == 1
+        inserted = cur.fetchone()
+        if inserted:
+            return True, receiver_id, "request", inserted["id"]
+        return False, receiver_id, "request", None
 
 
 def answer_friend_request(user_id, request_id, accept):
@@ -204,7 +215,8 @@ def open_direct_chat(user_id, friend_id):
 
 def list_user_chats(user_id):
     with get_cursor() as cur:
-        cur.execute("""SELECT c.id, u.id AS friend_id, u.username,
+        cur.execute("""SELECT c.id, u.id AS friend_id, u.username, u.display_name,
+            (u.avatar_data IS NOT NULL) AS has_avatar,
             (SELECT body FROM messages WHERE conversation_id=c.id ORDER BY created_at DESC LIMIT 1) AS last_message
             FROM conversations c
             JOIN conversation_members mine ON mine.conversation_id=c.id AND mine.user_id=%s
@@ -221,7 +233,7 @@ def read_chat(user_id, conversation_id):
                     (conversation_id, user_id))
         if not cur.fetchone():
             return None
-        cur.execute("""SELECT m.id, m.body, m.created_at, u.username FROM messages m
+        cur.execute("""SELECT m.id, m.body, m.created_at, u.username, u.display_name FROM messages m
             JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=%s
             ORDER BY m.created_at ASC LIMIT 100""", (conversation_id,))
         return cur.fetchall()
@@ -234,6 +246,30 @@ def save_message(user_id, conversation_id, body):
                     (conversation_id, user_id))
         if not cur.fetchone():
             return False
-        cur.execute("INSERT INTO messages (conversation_id, sender_id, body) VALUES (%s, %s, %s)",
-                    (conversation_id, user_id, body))
-        return True
+        cur.execute("""INSERT INTO messages (conversation_id, sender_id, body)
+            VALUES (%s, %s, %s) RETURNING id, created_at""", (conversation_id, user_id, body))
+        return cur.fetchone()
+
+
+def pending_request_count(user_id):
+    with get_cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS count FROM friendship_requests WHERE receiver_id=%s AND status='pending'",
+                    (user_id,))
+        return cur.fetchone()["count"]
+
+
+def save_avatar(user_id, image_bytes):
+    with get_cursor() as cur:
+        cur.execute("UPDATE users SET avatar_data=%s WHERE id=%s", (psycopg2.Binary(image_bytes), user_id))
+
+
+def update_display_name(user_id, display_name):
+    with get_cursor() as cur:
+        cur.execute("UPDATE users SET display_name=%s WHERE id=%s", (display_name, user_id))
+
+
+def get_avatar(user_id):
+    with get_cursor() as cur:
+        cur.execute("SELECT avatar_data FROM users WHERE id=%s", (user_id,))
+        row = cur.fetchone()
+        return bytes(row["avatar_data"]) if row and row["avatar_data"] else None

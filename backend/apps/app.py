@@ -1,17 +1,22 @@
 """Chatify web routes. Keep page rendering here and SQL in backend/storage."""
 
+import asyncio
 import hashlib
 import hmac
+import io
 import secrets
+from http.cookies import SimpleCookie
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
 
 import psycopg2
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+import socketio
+from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from backend.storage import main as storage
 
@@ -23,6 +28,10 @@ app = FastAPI(title="Chatify")
 app.mount("/CHATIFY/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 SESSION_COOKIE = "chatify_session"
+
+# Socket.IO forwards ordinary HTTP routes to FastAPI and handles realtime events.
+sio = socketio.AsyncServer(async_mode="asgi")
+socket_app = socketio.ASGIApp(sio, app)
 
 
 @app.on_event("startup")
@@ -82,14 +91,16 @@ async def signup(request: Request):
 
 
 @app.post("/register", response_class=HTMLResponse)
-async def register(request: Request, username: str = Form(...), email: str = Form(...),
+async def register(request: Request, username: str = Form(...), display_name: str = Form(...), email: str = Form(...),
                    password: str = Form(...), password_confirmation: str = Form(...)):
-    username, email = username.strip(), email.strip()
+    username, display_name, email = username.strip(), display_name.strip(), email.strip()
     error = None
     if not (3 <= len(username) <= 30) or not all(c.isascii() and (c.isalnum() or c == "_") for c in username):
         error = "Username 3–30 letters, numbers, ya underscores ka hona chahiye."
     elif "@" not in email or len(email) > 254:
         error = "Valid email address enter karo."
+    elif not 1 <= len(display_name) <= 80:
+        error = "Display name 1 se 80 characters ka hona chahiye."
     elif not 12 <= len(password) <= 128:
         error = "Password 12 se 128 characters ka hona chahiye."
     elif password != password_confirmation:
@@ -97,7 +108,7 @@ async def register(request: Request, username: str = Form(...), email: str = For
     if error:
         return page(request, "signup.html", error=error)
     try:
-        storage.create_user(username, email, hash_password(password))
+        storage.create_user(username, email, hash_password(password), display_name)
     except psycopg2.errors.UniqueViolation:
         return page(request, "signup.html", error="Username ya email pehle se registered hai.")
     return RedirectResponse("/login?registered=1", status_code=303)
@@ -133,9 +144,10 @@ async def friends_page(request: Request, search: str = "", message: str = ""):
     user = current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
+    friend_requests = storage.list_pending_requests(user["id"])
     return page(request, "friends.html", user=user,
                 friends=storage.list_friends(user["id"], search.strip()),
-                requests=storage.list_pending_requests(user["id"]), search=search,
+                requests=friend_requests, has_requests=bool(friend_requests), search=search,
                 notice=message)
 
 
@@ -144,7 +156,18 @@ async def add_friend(request: Request, username: str = Form(...)):
     user = current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
-    added = storage.send_friend_request(user["id"], username.strip().lstrip("@"))
+    added, receiver_id, request_kind, request_id = storage.send_friend_request(
+        user["id"], username.strip().lstrip("@"))
+    if added and request_kind == "request":
+        await sio.emit("friend_request", {
+            "request_id": request_id,
+            "sender_id": user["id"],
+            "name": user["display_name"],
+            "username": user["username"],
+            "has_avatar": user["has_avatar"],
+        }, room=f"user:{receiver_id}")
+    elif added and request_kind == "accepted":
+        await sio.emit("friend_request_accepted", {"name": user["display_name"]}, room=f"user:{receiver_id}")
     message = "Request bhej di." if added else "User nahi mila, ya request pehle se hai."
     return RedirectResponse(f"/friends?message={quote(message)}", status_code=303)
 
@@ -155,7 +178,51 @@ async def respond_to_request(request: Request, request_id: int, action: str = Fo
     if not user:
         return RedirectResponse("/login", status_code=303)
     storage.answer_friend_request(user["id"], request_id, action == "accept")
+    count = await asyncio.to_thread(storage.pending_request_count, user["id"])
+    await sio.emit("friend_requests_count", {"count": count}, room=f"user:{user['id']}")
     return RedirectResponse("/friends", status_code=303)
+
+
+@app.get("/users/{user_id}/avatar")
+async def user_avatar(user_id: int):
+    image_bytes = await asyncio.to_thread(storage.get_avatar, user_id)
+    if not image_bytes:
+        return Response(status_code=404)
+    return Response(image_bytes, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/profile/avatar")
+async def change_avatar(request: Request, avatar: UploadFile = File(...)):
+    user = current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    # Limit upload size, crop to square, and store a predictable 256px avatar.
+    raw_image = await avatar.read(5 * 1024 * 1024 + 1)
+    if len(raw_image) > 5 * 1024 * 1024:
+        return RedirectResponse("/friends?message=Image+must+be+under+5+MB", status_code=303)
+    try:
+        with Image.open(io.BytesIO(raw_image)) as source:
+            if source.format not in {"JPEG", "PNG", "WEBP"}:
+                raise ValueError("Unsupported image format")
+            square_image = ImageOps.fit(source.convert("RGB"), (256, 256), method=Image.Resampling.LANCZOS)
+            output = io.BytesIO()
+            square_image.save(output, format="JPEG", quality=88, optimize=True)
+    except (UnidentifiedImageError, OSError, ValueError):
+        return RedirectResponse("/friends?message=Choose+a+valid+JPG+PNG+or+WEBP+image", status_code=303)
+    await asyncio.to_thread(storage.save_avatar, user["id"], output.getvalue())
+    return RedirectResponse("/friends?message=Profile+photo+updated", status_code=303)
+
+
+@app.post("/profile/name")
+async def change_display_name(request: Request, display_name: str = Form(...)):
+    user = current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    display_name = display_name.strip()
+    if 1 <= len(display_name) <= 80:
+        await asyncio.to_thread(storage.update_display_name, user["id"], display_name)
+        return RedirectResponse("/friends?message=Name+updated", status_code=303)
+    return RedirectResponse("/friends?message=Name+must+be+1+to+80+characters", status_code=303)
 
 
 @app.get("/chats", response_class=HTMLResponse)
@@ -169,8 +236,9 @@ async def chats_page(request: Request, with_user: int = 0, conversation: int = 0
         if conversation_id:
             return RedirectResponse(f"/chats?conversation={conversation_id}", status_code=303)
     messages = storage.read_chat(user["id"], conversation) if conversation else []
+    friend_requests = await asyncio.to_thread(storage.list_pending_requests, user["id"])
     return page(request, "chats.html", user=user, chats=storage.list_user_chats(user["id"]),
-                active_id=conversation, messages=messages,
+                has_requests=bool(friend_requests), active_id=conversation, messages=messages,
                 notice="" if messages is not None else "Chat access nahi hai.")
 
 
@@ -181,7 +249,15 @@ async def send_chat_message(request: Request, conversation_id: int, body: str = 
         return RedirectResponse("/login", status_code=303)
     body = body.strip()
     if body and len(body) <= 5000:
-        storage.save_message(user["id"], conversation_id, body)
+        saved = storage.save_message(user["id"], conversation_id, body)
+        if saved:
+            await sio.emit("new_message", {
+                "conversation_id": conversation_id,
+                "id": saved["id"],
+                "body": body,
+                "display_name": user["display_name"],
+                "created_at": saved["created_at"].isoformat(),
+            }, room=f"chat:{conversation_id}")
     return RedirectResponse(f"/chats?conversation={conversation_id}", status_code=303)
 
 
@@ -189,7 +265,70 @@ async def send_chat_message(request: Request, conversation_id: int, body: str = 
 async def logout(request: Request):
     token = request.cookies.get(SESSION_COOKIE)
     if token:
-        storage.delete_session(hashlib.sha256(token.encode()).hexdigest())
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        storage.delete_session(token_hash)
+        await sio.emit("session_revoked", room=f"session:{token_hash}")
     response = RedirectResponse("/", status_code=303)
     response.delete_cookie(SESSION_COOKIE, path="/")
     return response
+
+
+@sio.event
+async def connect(sid, environ, auth=None):
+    """Authenticate Socket.IO with the same opaque cookie as the HTTP pages."""
+    cookies = SimpleCookie(environ.get("HTTP_COOKIE", ""))
+    session_cookie = cookies.get(SESSION_COOKIE)
+    if not session_cookie:
+        return False
+    token_hash = hashlib.sha256(session_cookie.value.encode()).hexdigest()
+    user = await asyncio.to_thread(storage.get_session_user, token_hash)
+    if not user:
+        return False
+    await sio.save_session(sid, {"user_id": user["id"], "token_hash": token_hash})
+    await sio.enter_room(sid, f"user:{user['id']}")
+    await sio.enter_room(sid, f"session:{token_hash}")
+
+
+@sio.on("join_chat")
+async def join_chat(sid, data):
+    """Join a chat room only if the current user is a member in PostgreSQL."""
+    try:
+        conversation_id = int(data["conversation_id"])
+        session = await sio.get_session(sid)
+    except (KeyError, TypeError, ValueError):
+        return {"ok": False}
+    user = await asyncio.to_thread(storage.get_session_user, session["token_hash"])
+    if not user:
+        return {"ok": False}
+    messages = await asyncio.to_thread(storage.read_chat, user["id"], conversation_id)
+    if messages is None:
+        return {"ok": False}
+    await sio.enter_room(sid, f"chat:{conversation_id}")
+    return {"ok": True}
+
+
+@sio.on("send_message")
+async def socket_send_message(sid, data):
+    """Save first, then send the new message to all members in that chat room."""
+    try:
+        conversation_id = int(data["conversation_id"])
+        body = str(data["body"]).strip()
+        session = await sio.get_session(sid)
+    except (KeyError, TypeError, ValueError):
+        return {"ok": False}
+    if not body or len(body) > 5000:
+        return {"ok": False}
+    user = await asyncio.to_thread(storage.get_session_user, session["token_hash"])
+    if not user:
+        return {"ok": False}
+    saved = await asyncio.to_thread(storage.save_message, user["id"], conversation_id, body)
+    if not saved:
+        return {"ok": False}
+    await sio.emit("new_message", {
+        "conversation_id": conversation_id,
+        "id": saved["id"],
+        "body": body,
+        "display_name": user["display_name"],
+        "created_at": saved["created_at"].isoformat(),
+    }, room=f"chat:{conversation_id}")
+    return {"ok": True}
