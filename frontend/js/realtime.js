@@ -125,14 +125,14 @@ function startRealtime() {
     status.dataset.connected = String(connected);
   };
   const hideChatLoading = () => document.getElementById("chat-loading")?.classList.add("hidden");
-  const chatLoadingFallback = window.setTimeout(hideChatLoading, 2500);
+  // The conversation is already rendered by the server; realtime connects in the background.
+  hideChatLoading();
   socket.on("connect", () => {
     setStatus("Live", true);
   });
   socket.on("disconnect", () => setStatus("Reconnecting…", false));
   socket.on("connect_error", () => {
     setStatus("Offline · retrying", false);
-    window.clearTimeout(chatLoadingFallback);
     hideChatLoading();
   });
 
@@ -158,7 +158,6 @@ function startRealtime() {
         joinedRoom = Boolean(result && result.ok);
         scrollToLatest();
         if (joinedRoom) {
-          window.clearTimeout(chatLoadingFallback);
           hideChatLoading();
         }
       });

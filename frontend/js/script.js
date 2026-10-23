@@ -87,5 +87,5 @@ document.addEventListener("click", (event) => {
   event.preventDefault();
   pageRoot.classList.remove("page-ready");
   pageRoot.classList.add("page-leaving");
-  window.setTimeout(() => window.location.assign(destination.href), 850);
+  window.setTimeout(() => window.location.assign(destination.href), 160);
 });

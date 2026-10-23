@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://cdn.socket.io" crossorigin>
   <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" async></script>
   <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('frontend', path='/styles/chats.css') }}?v=6">
+  <link rel="stylesheet" href="{{ url_for('frontend', path='/styles/chats.css') }}?v=7">
   <title>{% if active_partner %}{{ active_partner.display_name }} · {% endif %}Chatify</title>
 </head>
 <body class="chat-body">
@@ -65,7 +65,7 @@
     <section class="chat-empty welcome"><h1>Choose a friend to message</h1><p>Open a conversation from your Friends page.</p><a href="/friends">Go to Friends</a></section>
     {% endif %}
   </main>
-  <script src="{{ url_for('frontend', path='/js/realtime.js') }}?v=6" defer></script>
-  <script src="{{ url_for('frontend', path='/js/script.js') }}?v=1" defer></script>
+  <script src="{{ url_for('frontend', path='/js/realtime.js') }}?v=7" defer></script>
+  <script src="{{ url_for('frontend', path='/js/script.js') }}?v=7" defer></script>
 </body>
 </html>

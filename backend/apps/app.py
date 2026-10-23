@@ -71,11 +71,11 @@ def password_matches(password, encoded_hash):
         return False
 
 
-def current_user(request):
+async def current_user(request):
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return None
-    return storage.get_session_user(hashlib.sha256(token.encode()).hexdigest())
+    return await asyncio.to_thread(storage.get_session_user, hashlib.sha256(token.encode()).hexdigest())
 
 
 def page(request, name, **context):
@@ -121,7 +121,7 @@ async def register(request: Request, username: str = Form(...), display_name: st
     if error:
         return page(request, "signup.html", error=error)
     try:
-        storage.create_user(username, email, hash_password(password), display_name)
+        await asyncio.to_thread(storage.create_user, username, email, hash_password(password), display_name)
     except psycopg2.errors.UniqueViolation:
         return page(request, "signup.html", error="Username or email are already registered.")
     return RedirectResponse("/login?registered=1", status_code=303)
@@ -130,7 +130,7 @@ async def register(request: Request, username: str = Form(...), display_name: st
 @fastapi_app.get("/login", response_class=HTMLResponse)
 @fastapi_app.get("/signin", response_class=HTMLResponse, include_in_schema=False)
 async def signin(request: Request):
-    if current_user(request):
+    if await current_user(request):
         return RedirectResponse("/friends", status_code=303)
     notice = "Signup completed, Now please signin." if request.query_params.get("registered") else None
     return page(request, "signin.html", notice=notice)
@@ -138,12 +138,12 @@ async def signin(request: Request):
 
 @fastapi_app.post("/login", response_class=HTMLResponse)
 async def login(request: Request, identifier: str = Form(...), password: str = Form(...)):
-    user = storage.find_user(identifier.strip())
+    user = await asyncio.to_thread(storage.find_user, identifier.strip())
     if not user or not password_matches(password, user["password_hash"]):
         return page(request, "signin.html", error="Username/email or password is wrong.")
     token = secrets.token_urlsafe(32)
-    storage.create_session(user["id"], hashlib.sha256(token.encode()).hexdigest(),
-                           datetime.now(timezone.utc) + timedelta(days=14))
+    await asyncio.to_thread(storage.create_session, user["id"], hashlib.sha256(token.encode()).hexdigest(),
+                            datetime.now(timezone.utc) + timedelta(days=14))
     response = RedirectResponse("/friends", status_code=303)
     response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax",
                         secure=request.url.scheme == "https", max_age=14 * 24 * 60 * 60,
@@ -154,24 +154,28 @@ async def login(request: Request, identifier: str = Form(...), password: str = F
 @fastapi_app.get("/inbox")
 @fastapi_app.get("/friends")
 async def friends_page(request: Request, search: str = "", message: str = ""):
-    user = current_user(request)
+    user = await current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
-    friend_requests = storage.list_pending_requests(user["id"])
+    friend_requests = await asyncio.to_thread(storage.list_pending_requests, user["id"])
+    friends, unread_count = await asyncio.gather(
+        asyncio.to_thread(storage.list_friends, user["id"], search.strip()),
+        asyncio.to_thread(storage.unread_message_count, user["id"]),
+    )
     return page(request, "friends.html", user=user,
-                friends=storage.list_friends(user["id"], search.strip()),
+                friends=friends,
                 requests=friend_requests, has_requests=bool(friend_requests), search=search,
-                has_unread_messages=storage.unread_message_count(user["id"]) > 0,
+                has_unread_messages=unread_count > 0,
                 notice=message)
 
 
 @fastapi_app.post("/friends/add")
 async def add_friend(request: Request, username: str = Form(...)):
-    user = current_user(request)
+    user = await current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
-    added, receiver_id, request_kind, request_id = storage.send_friend_request(
-        user["id"], username.strip().lstrip("@"))
+    added, receiver_id, request_kind, request_id = await asyncio.to_thread(
+        storage.send_friend_request, user["id"], username.strip().lstrip("@"))
     if added and request_kind == "request":
         await sio.emit("friend_request", {
             "request_id": request_id,
@@ -188,10 +192,10 @@ async def add_friend(request: Request, username: str = Form(...)):
 
 @fastapi_app.post("/friends/request/{request_id}")
 async def respond_to_request(request: Request, request_id: int, action: str = Form(...)):
-    user = current_user(request)
+    user = await current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
-    storage.answer_friend_request(user["id"], request_id, action == "accept")
+    await asyncio.to_thread(storage.answer_friend_request, user["id"], request_id, action == "accept")
     count = await asyncio.to_thread(storage.pending_request_count, user["id"])
     await sio.emit("friend_requests_count", {"count": count}, room=f"user:{user['id']}")
     return RedirectResponse("/friends", status_code=303)
@@ -207,7 +211,7 @@ async def user_avatar(user_id: int):
 
 @fastapi_app.post("/profile/avatar")
 async def change_avatar(request: Request, avatar: UploadFile = File(...)):
-    user = current_user(request)
+    user = await current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
     # Limit upload size, crop to square, and store a predictable 256px avatar.
@@ -229,7 +233,7 @@ async def change_avatar(request: Request, avatar: UploadFile = File(...)):
 
 @fastapi_app.post("/profile/name")
 async def change_display_name(request: Request, display_name: str = Form(...)):
-    user = current_user(request)
+    user = await current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
     display_name = display_name.strip()
@@ -241,19 +245,28 @@ async def change_display_name(request: Request, display_name: str = Form(...)):
 
 @fastapi_app.get("/chats", response_class=HTMLResponse)
 async def chats_page(request: Request, with_user: int = 0, conversation: int = 0):
-    user = current_user(request)
+    user = await current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
     # A friend id opens the corresponding private chat, creating it if needed.
     if with_user:
-        conversation_id = storage.open_direct_chat(user["id"], with_user)
+        conversation_id = await asyncio.to_thread(storage.open_direct_chat, user["id"], with_user)
         if conversation_id:
             return RedirectResponse(f"/chats?conversation={conversation_id}", status_code=303)
-    messages = storage.read_chat(user["id"], conversation) if conversation else []
-    if conversation and messages is not None:
-        storage.mark_chat_read(user["id"], conversation)
-    friend_requests = await asyncio.to_thread(storage.list_pending_requests, user["id"])
-    chats = await asyncio.to_thread(storage.list_user_chats, user["id"])
+    if conversation:
+        messages, friend_requests, chats = await asyncio.gather(
+            asyncio.to_thread(storage.read_chat, user["id"], conversation),
+            asyncio.to_thread(storage.list_pending_requests, user["id"]),
+            asyncio.to_thread(storage.list_user_chats, user["id"]),
+        )
+        if messages is not None:
+            await asyncio.to_thread(storage.mark_chat_read, user["id"], conversation)
+    else:
+        messages = []
+        friend_requests, chats = await asyncio.gather(
+            asyncio.to_thread(storage.list_pending_requests, user["id"]),
+            asyncio.to_thread(storage.list_user_chats, user["id"]),
+        )
     active_partner = next((chat for chat in chats if chat["id"] == conversation), None)
     return page(request, "chats.html", user=user, chats=chats, active_partner=active_partner,
                 has_requests=bool(friend_requests), active_id=conversation, messages=messages,
@@ -263,12 +276,12 @@ async def chats_page(request: Request, with_user: int = 0, conversation: int = 0
 
 @fastapi_app.post("/chats/{conversation_id}/send")
 async def send_chat_message(request: Request, conversation_id: int, body: str = Form(...)):
-    user = current_user(request)
+    user = await current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
     body = body.strip()
     if body and len(body) <= 5000:
-        saved = storage.save_message(user["id"], conversation_id, body)
+        saved = await asyncio.to_thread(storage.save_message, user["id"], conversation_id, body)
         if saved:
             message = {
                 "conversation_id": conversation_id,
@@ -290,7 +303,7 @@ async def logout(request: Request):
     token = request.cookies.get(SESSION_COOKIE)
     if token:
         token_hash = hashlib.sha256(token.encode()).hexdigest()
-        storage.delete_session(token_hash)
+        await asyncio.to_thread(storage.delete_session, token_hash)
         await sio.emit("session_revoked", room=f"session:{token_hash}")
     response = RedirectResponse("/", status_code=303)
     response.delete_cookie(SESSION_COOKIE, path="/")
